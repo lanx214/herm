@@ -83,7 +83,7 @@ const FieldRow = memo((props: {
   const hint = (): string => {
     if (props.readonly || f.type === "readonly") return "🔒";
     if (f.type === "boolean") return "[space]";
-    if (f.type === "select") return "[h/l]";
+    if (f.type === "select") return "[←→]";
     return "[enter]";
   };
 
@@ -155,18 +155,19 @@ const SlotRow = memo((p: { id: string; s: Slot; on: boolean }) => {
   );
 });
 
-const PrefRow = memo((p: { id: string; on: boolean }) => {
+const PrefRow = memo((p: { id: string; on: boolean; onHover: () => void; onSelect: () => void }) => {
   const theme = useTheme().theme;
   const fps = preferences.usePref("targetFps") ?? 30;
   return (
-    <box id={p.id} flexDirection="column" backgroundColor={p.on ? theme.backgroundElement : undefined}>
+    <box id={p.id} flexDirection="column" backgroundColor={p.on ? theme.backgroundElement : undefined}
+         onMouseMove={p.onHover} onMouseDown={p.onSelect}>
       <box flexDirection="row" height={1}>
         <Col w={2} fg={theme.textMuted}>·</Col>
         <Col w={2} fg={p.on ? theme.primary : theme.text}>{p.on ? "▸ " : "  "}</Col>
         <Col w={40} fg={p.on ? theme.accent : theme.text}>target FPS</Col>
         <Col grow min={6} fg={theme.text}>{`${fps} fps`}</Col>
         <Col w={2} fg={theme.textMuted}>⟳</Col>
-        <Col w={9} fg={theme.textMuted} right>{p.on ? "[h/l]" : ""}</Col>
+        <Col w={9} fg={theme.textMuted} right>{p.on ? "[←→]" : ""}</Col>
       </box>
       {p.on ? (
         <box flexDirection="row" minHeight={1}>
@@ -257,6 +258,14 @@ export const Config = memo((props: { focused?: boolean }) => {
     setNested(next, key, val);
     setRaw(next);
     setYaml(yamlStringify(next));
+  };
+
+  const fps = (step: 1 | -1) => {
+    const opts = preferences.TARGET_FPS_OPTIONS;
+    const i = opts.findIndex(n => n === preferences.targetFps(preferences.get("targetFps")));
+    const val = opts[(i + step + opts.length) % opts.length];
+    preferences.set("targetFps", val);
+    toast.show({ variant: "success", message: `target FPS → ${val}; restart Herm to apply` });
   };
 
   const fmt = (v: unknown) =>
@@ -455,20 +464,8 @@ export const Config = memo((props: { focused?: boolean }) => {
     }
 
     if (onPrefs) {
-      const opts = preferences.TARGET_FPS_OPTIONS;
-      const i = opts.findIndex(fps => fps === preferences.targetFps(preferences.get("targetFps")));
-      if (key.raw === "l" || key.raw === "]") {
-        const fps = opts[(i + 1) % opts.length];
-        preferences.set("targetFps", fps);
-        toast.show({ variant: "success", message: `target FPS → ${fps}; restart Herm to apply` });
-        return;
-      }
-      if (key.raw === "h" || key.raw === "[") {
-        const fps = opts[(i - 1 + opts.length) % opts.length];
-        preferences.set("targetFps", fps);
-        toast.show({ variant: "success", message: `target FPS → ${fps}; restart Herm to apply` });
-        return;
-      }
+      if (key.name === "right" || key.raw === "l" || key.raw === "]") { fps(1); return; }
+      if (key.name === "left" || key.raw === "h" || key.raw === "[") { fps(-1); return; }
       handleListKey(keys, key, { count, setSel: setCursor, ...follow.opts });
       return;
     }
@@ -487,11 +484,11 @@ export const Config = memo((props: { focused?: boolean }) => {
 
     if (f.type === "select" && f.options) {
       const idx = f.options.indexOf(String(f.value));
-      if (key.raw === "l" || key.raw === "]") {
+      if (key.name === "right" || key.raw === "l" || key.raw === "]") {
         update(f.key, f.options[(idx + 1) % f.options.length]);
         return;
       }
-      if (key.raw === "h" || key.raw === "[") {
+      if (key.name === "left" || key.raw === "h" || key.raw === "[") {
         update(f.key, f.options[(idx - 1 + f.options.length) % f.options.length]);
         return;
       }
@@ -597,7 +594,9 @@ export const Config = memo((props: { focused?: boolean }) => {
               </text></box>
               <box height={1} />
               <scrollbox ref={follow.ref} scrollY flexGrow={1} verticalScrollbarOptions={VBAR}>
-                <PrefRow id={follow.id(0)} on={focus === "fields"} />
+                <PrefRow id={follow.id(0)} on={focus === "fields"}
+                         onHover={() => { setFocus("fields"); setCursor(0); }}
+                         onSelect={() => { setFocus("fields"); setCursor(0); fps(1); }} />
               </scrollbox>
             </box>
           ) : (<>
@@ -662,7 +661,7 @@ export const Config = memo((props: { focused?: boolean }) => {
               ["Tab", "categories"],
             ]} />
           : onPrefs
-            ? <HintBar pairs={[["h/l", "target fps"], ["Tab", "categories"]]} />
+            ? <HintBar pairs={[["←→", "target fps"], ["Tab", "categories"]]} />
           : focus === "categories" && !searching
             ? <HintBar pairs={[["↑↓", "select"], ["Tab", "fields"]]} />
             : <HintBar

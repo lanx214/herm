@@ -279,12 +279,21 @@ describe("Config tab", () => {
     await until(t, () => t.frame().includes("target FPS"))
     expect(t.frame()).toContain("30 fps")
     expect(t.frame()).toContain("15 fps lowers")
+    expect(t.frame()).toContain("[←→] target fps")
 
-    await act(async () => { await t.keys.typeText("h") })
+    act(() => t.keys.pressArrow("left"))
     await until(t, () => prefs.get("targetFps") === 24)
-    await act(async () => { await t.keys.typeText("h") })
+    act(() => t.keys.pressArrow("left"))
     await until(t, () => prefs.get("targetFps") === 15)
     expect(t.frame()).toContain("15 fps")
+
+    const lines = t.frame().split("\n")
+    const y = lines.findIndex(l => l.includes("target FPS") && l.includes("15 fps"))
+    await act(async () => { await t.mouse.pressDown(lines[y].indexOf("target FPS"), y) })
+    await until(t, () => prefs.get("targetFps") === 24)
+    act(() => t.keys.pressArrow("left"))
+    await until(t, () => prefs.get("targetFps") === 15)
+
     prefs.reset()
     expect(prefs.get("targetFps")).toBe(15)
     t.destroy()
