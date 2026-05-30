@@ -14,6 +14,12 @@
 import { writeSync } from "node:fs"
 
 let done = false
+const fns = new Set<() => void>()
+
+export function onQuit(fn: () => void) {
+  fns.add(fn)
+  return () => fns.delete(fn)
+}
 
 export function quit(
   renderer: { destroy: () => void },
@@ -23,6 +29,7 @@ export function quit(
 ): never {
   if (done) process.exit(0)
   done = true
+  for (const fn of fns) fn()
   // Explicit SIGTERM to the gateway so its signal handler runs the
   // graceful sys.exit(0) → atexit → _shutdown_sessions path inside the
   // grace window. Without this we rely on stdin EOF, which works, but

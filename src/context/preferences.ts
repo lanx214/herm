@@ -27,6 +27,8 @@ interface TuiPreferences {
   mouse?: boolean
   /** Target render FPS */
   targetFps?: number
+  /** Seconds without input before the renderer suspends */
+  idleSuspendSeconds?: number
   /** Last active session ID — stub-reuse check on fresh launch */
   lastSessionId?: string
   /** Active avatar by name; resolved against <profile>/eikons/ → bundled. */
@@ -82,9 +84,10 @@ export type KanbanPrefs = {
   }>
 }
 
-const DEFAULTS: Required<Pick<TuiPreferences, "mouse" | "targetFps">> = {
+const DEFAULTS: Required<Pick<TuiPreferences, "mouse" | "targetFps" | "idleSuspendSeconds">> = {
   mouse: true,
   targetFps: 30,
+  idleSuspendSeconds: 15,
 }
 
 import { configDir } from "../utils/paths"

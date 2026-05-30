@@ -17,6 +17,8 @@ import * as preferences from "./context/preferences";
 import { resetTerminalModes, installExitResetHooks } from "./utils/terminal-reset";
 import { warmup as warmTokens } from "./utils/tokens";
 import { prime as primeTheme, DEFAULT_THEME } from "./theme";
+import { Idle } from "./app/idle";
+import { onQuit } from "./app/exit";
 
 // Static ESM imports hoist above module-level code, so the only
 // honest import-graph measurement is process-uptime at the point
@@ -71,6 +73,10 @@ const main = async () => {
     || (process.stdout.isTTY && process.stdout.write("\x1b[>4;2m"))
   bump()
   renderer.on("focus", bump)
+  const idle = new Idle(renderer, { ms: Math.max(1, prefs.idleSuspendSeconds ?? 15) * 1000 })
+  idle.start()
+  renderer.on("destroy", () => idle.shutdown())
+  onQuit(() => idle.shutdown())
 
   perf.mem("post-renderer")
 
