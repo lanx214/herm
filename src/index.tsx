@@ -19,6 +19,7 @@ import * as preferences from "./context/preferences";
 import { resetTerminalModes, installExitResetHooks } from "./utils/terminal-reset";
 import { warmup as warmTokens } from "./utils/tokens";
 import { prime as primeTheme, DEFAULT_THEME } from "./theme";
+import { runDoctor, formatDoctor } from "./service/doctor";
 
 // Static ESM imports hoist above module-level code, so the only
 // honest import-graph measurement is process-uptime at the point
@@ -36,6 +37,16 @@ if (argv.includes("--help") || argv.includes("-h")) {
 if (argv.includes("--version") || argv.includes("-v")) {
   process.stdout.write(VERSION + "\n")
   process.exit(0)
+}
+if (argv.includes("doctor") || argv.includes("--doctor")) {
+  try {
+    const items = await runDoctor()
+    process.stdout.write(formatDoctor(items) + "\n")
+    process.exit(items.some(p => p.status === "fail") ? 1 : 0)
+  } catch (e) {
+    process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`)
+    process.exit(1)
+  }
 }
 const launch = parseLaunch(argv)
 

@@ -48,6 +48,7 @@ Usage:
   herm -c, --continue     resume the last real TUI session
   herm --resume [id]      resume last (or the given) session
   herm --no-splash        skip the launch splash
+  herm doctor             run non-interactive health probes
   herm -v, --version      print version
   herm -h, --help         show this help
 `
