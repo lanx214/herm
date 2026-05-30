@@ -12,3 +12,17 @@ test("prefs: eikonPath → eikon migration on load", () => {
   expect(prefs.get("eikonPath")).toBeUndefined()
   expect(prefs.get("theme")).toBe("t")
 })
+
+test("prefs: targetFps is parsed and clamped", () => {
+  mkdirSync(configDir(), { recursive: true })
+  writeFileSync(`${configDir()}/tui.json`, JSON.stringify({ targetFps: "12" }))
+  prefs.reset()
+  expect(prefs.get("targetFps")).toBe(15)
+
+  prefs.set("targetFps", 99)
+  expect(prefs.get("targetFps")).toBe(30)
+
+  prefs.set("targetFps", 24)
+  prefs.reset()
+  expect(prefs.get("targetFps")).toBe(24)
+})

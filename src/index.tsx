@@ -54,7 +54,7 @@ const main = async () => {
   const renderer = await createCliRenderer({
     exitOnCtrlC: false, // We handle Ctrl+C ourselves
     useMouse: prefs.mouse ?? true,
-    targetFps: prefs.targetFps ?? 30,
+    targetFps: preferences.targetFps(prefs.targetFps),
     gatherStats: false,
   });
   end()

@@ -266,4 +266,27 @@ describe("Config tab", () => {
     expect(t.frame().split("\n").some(l => l.includes("▸") && l.includes("general"))).toBe(true)
     t.destroy()
   })
+
+  test("tui preferences expose target FPS and persist lower-power preset", async () => {
+    const prefs = await import("../src/context/preferences")
+    prefs.set("targetFps", 30)
+    const gw = new MockGateway({ "config.get": () => ({ config: {} }) })
+    const t = await mountNode(<Config focused />, { gw, width: 160, height: 40 })
+    await until(t, () => t.frame().includes("TUI (1)"))
+
+    for (let i = 0; i <= GROUPS.length; i++) act(() => t.keys.pressArrow("down"))
+    act(() => t.keys.pressTab())
+    await until(t, () => t.frame().includes("target FPS"))
+    expect(t.frame()).toContain("30 fps")
+    expect(t.frame()).toContain("15 fps lowers")
+
+    await act(async () => { await t.keys.typeText("h") })
+    await until(t, () => prefs.get("targetFps") === 24)
+    await act(async () => { await t.keys.typeText("h") })
+    await until(t, () => prefs.get("targetFps") === 15)
+    expect(t.frame()).toContain("15 fps")
+    prefs.reset()
+    expect(prefs.get("targetFps")).toBe(15)
+    t.destroy()
+  })
 })

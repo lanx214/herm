@@ -84,10 +84,24 @@ export type KanbanPrefs = {
   }>
 }
 
+export const TARGET_FPS_OPTIONS = [15, 24, 30] as const
+
 const DEFAULTS: Required<Pick<TuiPreferences, "mouse" | "targetFps" | "idleSuspendSeconds">> = {
   mouse: true,
   targetFps: 30,
   idleSuspendSeconds: 15,
+}
+
+export function targetFps(raw: unknown): number {
+  const n = typeof raw === "number" ? raw
+    : typeof raw === "string" && raw.trim() !== "" ? Number(raw)
+    : DEFAULTS.targetFps
+  if (!Number.isFinite(n)) return DEFAULTS.targetFps
+  const fps = Math.round(n)
+  if (fps < TARGET_FPS_OPTIONS[0]) return TARGET_FPS_OPTIONS[0]
+  if (fps > TARGET_FPS_OPTIONS[TARGET_FPS_OPTIONS.length - 1])
+    return TARGET_FPS_OPTIONS[TARGET_FPS_OPTIONS.length - 1]
+  return fps
 }
 
 import { configDir } from "../utils/paths"
@@ -129,7 +143,7 @@ export function load(): TuiPreferences {
       raw.eikon = raw.eikonPath.split("/").pop()?.replace(/\.eikon$/, "")
       delete raw.eikonPath
     }
-    const prefs = { ...DEFAULTS, ...raw }
+    const prefs = { ...DEFAULTS, ...raw, targetFps: targetFps(raw.targetFps) }
     cached = prefs
     return prefs
   } catch {
@@ -173,8 +187,9 @@ export function get<K extends keyof TuiPreferences>(key: K): TuiPreferences[K] {
  *  redundant writes (e.g. a picker's live-preview re-firing on the same
  *  row) don't notify subscribers and trigger render loops. */
 export function set<K extends keyof TuiPreferences>(key: K, value: TuiPreferences[K]): void {
-  if (load()[key] === value) return
-  save({ [key]: value } as Partial<TuiPreferences>)
+  const val = key === "targetFps" ? targetFps(value) : value
+  if (load()[key] === val) return
+  save({ [key]: val } as Partial<TuiPreferences>)
   for (const l of listeners) l()
 }
 

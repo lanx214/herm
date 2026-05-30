@@ -17,6 +17,7 @@ import { readSlots, assign, resetAux, AUX_TASKS, type Slot } from "../config/mod
 import { openModelPicker } from "../dialogs/model-picker";
 import { managedSystem, makeSource } from "../service/hermes-home";
 import { FileLink } from "../components/ui/FileLink";
+import * as preferences from "../context/preferences";
 
 const flatten = (obj: Record<string, unknown>, prefix = ""): [string, unknown][] =>
   Object.entries(obj).flatMap(([k, v]) => {
@@ -154,6 +155,31 @@ const SlotRow = memo((p: { id: string; s: Slot; on: boolean }) => {
   );
 });
 
+const PrefRow = memo((p: { id: string; on: boolean }) => {
+  const theme = useTheme().theme;
+  const fps = preferences.usePref("targetFps") ?? 30;
+  return (
+    <box id={p.id} flexDirection="column" backgroundColor={p.on ? theme.backgroundElement : undefined}>
+      <box flexDirection="row" height={1}>
+        <Col w={2} fg={theme.textMuted}>·</Col>
+        <Col w={2} fg={p.on ? theme.primary : theme.text}>{p.on ? "▸ " : "  "}</Col>
+        <Col w={40} fg={p.on ? theme.accent : theme.text}>target FPS</Col>
+        <Col grow min={6} fg={theme.text}>{`${fps} fps`}</Col>
+        <Col w={2} fg={theme.textMuted}>⟳</Col>
+        <Col w={9} fg={theme.textMuted} right>{p.on ? "[h/l]" : ""}</Col>
+      </box>
+      {p.on ? (
+        <box flexDirection="row" minHeight={1}>
+          <box width={4} flexShrink={0} />
+          <box width={40} flexShrink={0} minHeight={1}>
+            <text wrapMode="word" fg={theme.textMuted}>Renderer frame budget. 15 fps lowers idle power, 30 fps is smoother. Restart Herm to apply.</text>
+          </box>
+        </box>
+      ) : null}
+    </box>
+  );
+});
+
 export const Config = memo((props: { focused?: boolean }) => {
   const theme = useTheme().theme;
   const gw = useGateway();
@@ -206,16 +232,18 @@ export const Config = memo((props: { focused?: boolean }) => {
   // model" lands, instead of the 56-field `auxiliary` group.
   const groups = [...grouped.keys()];
   groups.splice(1, 0, "models");
+  groups.push("TUI");
 
   const active = groups[cat] ?? groups[0];
   const onSlots = active === "models" && !searching;
+  const onPrefs = active === "TUI" && !searching;
   const slots = readSlots(raw);
   const secs: Section[] = searching && query.trim()
     ? [{ head: null, items: all.filter(f => f.key.toLowerCase().includes(query.toLowerCase())) }]
     : sections(active, grouped.get(active) ?? []);
   const fields = secs.flatMap(s => s.items);
 
-  const count = onSlots ? slots.length : fields.length;
+  const count = onSlots ? slots.length : onPrefs ? 1 : fields.length;
   const follow = useFollow("cfg");
   const catFollow = useFollow("cfg-cat");
 
@@ -426,6 +454,25 @@ export const Config = memo((props: { focused?: boolean }) => {
       return;
     }
 
+    if (onPrefs) {
+      const opts = preferences.TARGET_FPS_OPTIONS;
+      const i = opts.findIndex(fps => fps === preferences.targetFps(preferences.get("targetFps")));
+      if (key.raw === "l" || key.raw === "]") {
+        const fps = opts[(i + 1) % opts.length];
+        preferences.set("targetFps", fps);
+        toast.show({ variant: "success", message: `target FPS → ${fps}; restart Herm to apply` });
+        return;
+      }
+      if (key.raw === "h" || key.raw === "[") {
+        const fps = opts[(i - 1 + opts.length) % opts.length];
+        preferences.set("targetFps", fps);
+        toast.show({ variant: "success", message: `target FPS → ${fps}; restart Herm to apply` });
+        return;
+      }
+      handleListKey(keys, key, { count, setSel: setCursor, ...follow.opts });
+      return;
+    }
+
     const f = fields[cursor];
     const writable = !managed;
     const matched = handleListKey(keys, key, {
@@ -495,7 +542,7 @@ export const Config = memo((props: { focused?: boolean }) => {
                 const sel = i === cat;
                 const hot = sel && focus === "categories";
                 const items = grouped.get(c) ?? [];
-                const n = c === "models" ? slots.length : items.length;
+                const n = c === "models" ? slots.length : c === "TUI" ? 1 : items.length;
                 const catDirty = items.some(f => changed(f.key));
                 return (
                   <box
@@ -541,6 +588,16 @@ export const Config = memo((props: { focused?: boolean }) => {
                   <SlotRow key={s.key} id={follow.id(i)} s={s}
                            on={i === cursor && focus === "fields"} />
                 ))}
+              </scrollbox>
+            </box>
+          ) : onPrefs ? (
+            <box key="prefs" flexDirection="column" flexGrow={1}>
+              <box height={1}><text fg={theme.textMuted}>
+                Local Herm preferences persist to tui.json. Renderer settings apply on next launch.
+              </text></box>
+              <box height={1} />
+              <scrollbox ref={follow.ref} scrollY flexGrow={1} verticalScrollbarOptions={VBAR}>
+                <PrefRow id={follow.id(0)} on={focus === "fields"} />
               </scrollbox>
             </box>
           ) : (<>
@@ -604,6 +661,8 @@ export const Config = memo((props: { focused?: boolean }) => {
               ["X", "reset-all"],
               ["Tab", "categories"],
             ]} />
+          : onPrefs
+            ? <HintBar pairs={[["h/l", "target fps"], ["Tab", "categories"]]} />
           : focus === "categories" && !searching
             ? <HintBar pairs={[["↑↓", "select"], ["Tab", "fields"]]} />
             : <HintBar
