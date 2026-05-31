@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { act } from "react"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { tmpHome } from "./fixture/home"
 import { mountNode, until, MockGateway } from "./harness"
 import { Agents } from "../src/tabs/Agents"
 import {
@@ -13,32 +13,28 @@ import type { DelegationRecord, DelegationStatus } from "../src/context/wire"
 
 // ─── fixture ─────────────────────────────────────────────────────────
 
-let ROOT: string
-let PREV: string | undefined
+let home: Awaited<ReturnType<typeof tmpHome>>
 
 const mkProfile = (name: string, cfg: Record<string, unknown>) => {
-  const d = name === "default" ? ROOT : join(ROOT, "profiles", name)
+  const d = name === "default" ? home.path : join(home.path, "profiles", name)
   mkdirSync(join(d, "skills"), { recursive: true })
   const body = "model:\n" + Object.entries(cfg).map(([k, v]) => `  ${k}: ${v}`).join("\n") + "\n"
   writeFileSync(join(d, "config.yaml"), body)
   return d
 }
 
-beforeEach(() => {
-  ROOT = mkdtempSync(join(tmpdir(), "herm-agents-"))
-  PREV = process.env.HERMES_HOME
-  process.env.HERMES_HOME = ROOT
+beforeEach(async () => {
+  home = await tmpHome()
   mkProfile("default", { default: "test-model", provider: "anthropic" })
-  writeFileSync(join(ROOT, "SOUL.md"), "# Default Soul\n\nI am default.\nSecond line.")
-  writeFileSync(join(ROOT, ".env"), "FOO=bar")
-  mkdirSync(join(ROOT, "skills", "a"), { recursive: true })
-  writeFileSync(join(ROOT, "skills", "a", "SKILL.md"), "---\nname: a\n---")
+  writeFileSync(join(home.path, "SOUL.md"), "# Default Soul\n\nI am default.\nSecond line.")
+  writeFileSync(join(home.path, ".env"), "FOO=bar")
+  mkdirSync(join(home.path, "skills", "a"), { recursive: true })
+  writeFileSync(join(home.path, "skills", "a", "SKILL.md"), "---\nname: a\n---")
   mkProfile("coder", { default: "claude-4", provider: "anthropic" })
 })
 
-afterEach(() => {
-  process.env.HERMES_HOME = PREV
-  try { rmSync(ROOT, { recursive: true, force: true }) } catch { /* ignore */ }
+afterEach(async () => {
+  await home[Symbol.asyncDispose]()
 })
 
 // ─── hermes-profiles.ts ──────────────────────────────────────────────
@@ -59,7 +55,7 @@ describe("hermes-profiles", () => {
     expect(def.soul_preview).not.toContain("# Default Soul")
     expect(def.soul_preview.startsWith("I am default.")).toBe(true)
     // Source provenance.
-    expect(def.sources.config.file).toBe(join(ROOT, "config.yaml"))
+    expect(def.sources.config.file).toBe(join(home.path, "config.yaml"))
     expect(def.sources.soul.label).toBe("SOUL.md")
     expect(ps[1].is_active).toBe(false)
     expect(ps[1].model).toBe("claude-4")
@@ -67,7 +63,7 @@ describe("hermes-profiles", () => {
   })
 
   test("activeProfileName when running under a named profile", async () => {
-    process.env.HERMES_HOME = join(ROOT, "profiles", "coder")
+    process.env.HERMES_HOME = join(home.path, "profiles", "coder")
     expect(activeProfileName()).toBe("coder")
     const ps = await listProfiles()
     expect(ps.find(p => p.name === "coder")?.is_active).toBe(true)
@@ -76,15 +72,15 @@ describe("hermes-profiles", () => {
 
   test("is_active honors gateway-reported home over process env", async () => {
     // Herm's process runs under default, but the gateway says 'coder'.
-    expect(profileNameFrom(join(ROOT, "profiles", "coder"))).toBe("coder")
-    const ps = await listProfiles(join(ROOT, "profiles", "coder"))
+    expect(profileNameFrom(join(home.path, "profiles", "coder"))).toBe("coder")
+    const ps = await listProfiles(join(home.path, "profiles", "coder"))
     expect(ps.find(p => p.name === "coder")?.is_active).toBe(true)
     expect(ps.find(p => p.name === "default")?.is_active).toBe(false)
   })
 
   test("sticky default read from <root>/active_profile", async () => {
     expect(stickyDefault()).toBeNull()
-    writeFileSync(join(ROOT, "active_profile"), "coder\n")
+    writeFileSync(join(home.path, "active_profile"), "coder\n")
     expect(stickyDefault()).toBe("coder")
     const ps = await listProfiles()
     expect(ps.find(p => p.name === "coder")?.is_sticky).toBe(true)
@@ -100,35 +96,35 @@ describe("hermes-profiles", () => {
 
   test("profileStats reads state.db + cron/jobs.json + herm/tui.json; nulls when absent", async () => {
     // Bare profile: no state.db, no cron, no herm dir → nulls.
-    const bare = await profileStats(join(ROOT, "profiles", "coder"))
+    const bare = await profileStats(join(home.path, "profiles", "coder"))
     expect(bare).toEqual({ sessions: null, messages: null, crons: null, prefs: null })
 
     // Seed default with a state.db and jobs.json.
     const { Database } = await import("bun:sqlite")
-    const db = new Database(join(ROOT, "state.db"))
+    const db = new Database(join(home.path, "state.db"))
     db.run("CREATE TABLE sessions (id TEXT PRIMARY KEY, message_count INT)")
     db.run("INSERT INTO sessions VALUES ('a', 4), ('b', 0), ('c', 7)")
     db.close()
-    mkdirSync(join(ROOT, "cron"), { recursive: true })
-    writeFileSync(join(ROOT, "cron", "jobs.json"),
+    mkdirSync(join(home.path, "cron"), { recursive: true })
+    writeFileSync(join(home.path, "cron", "jobs.json"),
       JSON.stringify({ jobs: [{ id: "j1" }, { id: "j2" }] }))
-    mkdirSync(join(ROOT, "herm"), { recursive: true })
-    writeFileSync(join(ROOT, "herm", "tui.json"),
+    mkdirSync(join(home.path, "herm"), { recursive: true })
+    writeFileSync(join(home.path, "herm", "tui.json"),
       JSON.stringify({ theme: "liminal", eikon: "herm", keys: { "list.new": "a" } }))
 
-    const s = await profileStats(ROOT)
+    const s = await profileStats(home.path)
     expect(s.sessions).toBe(2)   // message_count > 0
     expect(s.messages).toBe(11)
     expect(s.crons).toBe(2)
     expect(s.prefs).toEqual({ theme: "liminal", eikon: "herm", keys: 1 })
 
     // Array-shaped jobs.json also supported.
-    writeFileSync(join(ROOT, "cron", "jobs.json"), JSON.stringify([{ id: "j1" }]))
-    expect((await profileStats(ROOT)).crons).toBe(1)
+    writeFileSync(join(home.path, "cron", "jobs.json"), JSON.stringify([{ id: "j1" }]))
+    expect((await profileStats(home.path)).crons).toBe(1)
   })
 
   test("readDistributionManifest: absent → null; populated → normalized manifest", async () => {
-    const dir = join(ROOT, "profiles", "coder")
+    const dir = join(home.path, "profiles", "coder")
 
     // No distribution.yaml → null.
     expect(readDistributionManifest(dir)).toBeNull()
@@ -180,7 +176,7 @@ describe("hermes-profiles", () => {
 
   test("listProfiles surfaces distribution on profiles that have a manifest", async () => {
     // default has no manifest; coder does.
-    writeFileSync(join(ROOT, "profiles", "coder", "distribution.yaml"),
+    writeFileSync(join(home.path, "profiles", "coder", "distribution.yaml"),
       "name: acme-coder\nversion: 0.9.0\n")
     const ps = await listProfiles()
     const def = ps.find(p => p.name === "default")!
@@ -190,7 +186,7 @@ describe("hermes-profiles", () => {
     expect(coder.distribution?.version).toBe("0.9.0")
     // Source provenance for FileLink.
     expect(coder.sources.distribution.file)
-      .toBe(join(ROOT, "profiles", "coder", "distribution.yaml"))
+      .toBe(join(home.path, "profiles", "coder", "distribution.yaml"))
     expect(coder.sources.distribution.label).toBe("distribution.yaml")
   })
 })
@@ -217,7 +213,7 @@ describe("Agents tab", () => {
       "delegation.status": () => STATUS(),
       // Gateway claims 'coder' is the active home, regardless of herm's env.
       "config.get": p => p.key === "profile"
-        ? { home: join(ROOT, "profiles", "coder"), display: "coder" }
+        ? { home: join(home.path, "profiles", "coder"), display: "coder" }
         : p.key === "full" ? { config: {} } : {},
     })
     const t = await mountNode(<Agents focused sessionId="test-sid" />, { gw, width: 200 })
@@ -250,7 +246,7 @@ describe("Agents tab", () => {
   })
 
   test("sticky default badged in row + title", async () => {
-    writeFileSync(join(ROOT, "active_profile"), "coder\n")
+    writeFileSync(join(home.path, "active_profile"), "coder\n")
     const t = await mountNode(<Agents focused sessionId="test-sid" />, { gw: new MockGateway(), width: 200 })
     await until(t, () => t.frame().includes("★"))
     const f = t.frame()
@@ -261,7 +257,7 @@ describe("Agents tab", () => {
   })
 
   test("distribution badge in row + Distribution block in detail", async () => {
-    writeFileSync(join(ROOT, "profiles", "coder", "distribution.yaml"), [
+    writeFileSync(join(home.path, "profiles", "coder", "distribution.yaml"), [
       "name: acme-coder",
       "version: 1.2.3",
       "hermes_requires: '>=2.0'",
@@ -296,7 +292,7 @@ describe("Agents tab", () => {
   })
 
   test("↓ selects, detail follows; d on active/default is no-op; d on other confirms → shell.exec; running-gateway warn", async () => {
-    writeFileSync(join(ROOT, "profiles", "coder", "gateway.pid"), String(process.pid))
+    writeFileSync(join(home.path, "profiles", "coder", "gateway.pid"), String(process.pid))
     const gw = new MockGateway({
       "shell.exec": () => ({ stdout: "deleted", stderr: "", code: 0 }),
     })
@@ -361,7 +357,7 @@ describe("Agents tab", () => {
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Profiles (3)"))
     expect(cmds[0]).toBe("hermes profile create coder-v2 --clone --clone-from default --no-alias")
-    expect(existsSync(join(ROOT, "profiles", "coder-v2"))).toBe(true)
+    expect(existsSync(join(home.path, "profiles", "coder-v2"))).toBe(true)
     t.destroy()
   })
 
@@ -480,7 +476,7 @@ describe("Agents tab", () => {
     await until(t, () => t.frame().includes("Switch to 'coder'?"))
     await act(async () => { await t.keys.typeText("y") })
     await t.settle()
-    expect(got).toEqual([[join(ROOT, "profiles", "coder"), "coder"]])
+    expect(got).toEqual([[join(home.path, "profiles", "coder"), "coder"]])
     t.destroy()
   })
 
@@ -687,7 +683,7 @@ describe("Agents tab", () => {
     t.destroy()
   })
   test("distribution menu: Info opens read-only dialog; Update → shell.exec with --force-config toggle", async () => {
-    writeFileSync(join(ROOT, "profiles", "coder", "distribution.yaml"), [
+    writeFileSync(join(home.path, "profiles", "coder", "distribution.yaml"), [
       "name: acme-coder",
       "version: 1.2.3",
       "description: Coding profile",
@@ -772,14 +768,14 @@ describe("Agents tab", () => {
   })
 
   test("update on the active profile warns + triggers rehome on success", async () => {
-    writeFileSync(join(ROOT, "profiles", "coder", "distribution.yaml"),
+    writeFileSync(join(home.path, "profiles", "coder", "distribution.yaml"),
       "name: acme-coder\nversion: 0.9.0\nsource: https://github.com/acme/coder\n")
     const cmds: string[] = []
     const switched: Array<[string, string]> = []
     const gw = new MockGateway({
       "shell.exec": p => { cmds.push(p.command as string); return { stdout: "ok", stderr: "", code: 0 } },
       "config.get": p => p.key === "profile"
-        ? { home: join(ROOT, "profiles", "coder"), display: "coder" }
+        ? { home: join(home.path, "profiles", "coder"), display: "coder" }
         : { config: {} },
     })
     const t = await mountNode(
@@ -804,7 +800,7 @@ describe("Agents tab", () => {
     await until(t, () => cmds.length > 0)
     expect(cmds[0]).toBe("hermes profile update coder -y")
     await until(t, () => switched.length > 0)
-    expect(switched).toEqual([[join(ROOT, "profiles", "coder"), "coder"]])
+    expect(switched).toEqual([[join(home.path, "profiles", "coder"), "coder"]])
     t.destroy()
   })
 
