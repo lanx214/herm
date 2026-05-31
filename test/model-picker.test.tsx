@@ -119,4 +119,63 @@ describe("model-picker", () => {
     t.destroy()
   })
 
+  test("multi-endpoint families drill group to concrete member to model", async () => {
+    const sets: Array<Record<string, unknown>> = []
+    const opts = {
+      provider: "xai-oauth",
+      model: "grok-oauth",
+      providers: [
+        { slug: "openai-api", name: "OpenAI API", total_models: 1, models: ["gpt-5"] },
+        { slug: "xai", name: "xAI Direct", total_models: 1, models: ["grok-direct"] },
+        { slug: "xai-oauth", name: "xAI OAuth", is_current: true, total_models: 1, models: ["grok-oauth"] },
+      ],
+    }
+    const t = await mountNode(<Open />, {
+      handlers: {
+        "model.options": () => opts,
+        "config.set": (p) => { sets.push(p); return { key: "model", value: p.value } },
+      },
+    })
+    t.gw.setSession("sess-abc")
+    await until(t, () => t.frame().includes("xAI Grok"))
+    expect(t.frame()).toContain("Current")
+    expect(t.frame()).not.toContain("xAI Direct")
+
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Switch Provider (xAI Grok)"))
+    expect(t.frame()).toContain("xAI OAuth")
+    expect(t.frame()).toContain("xAI Direct")
+
+    act(() => t.keys.pressArrow("up"))
+    await t.settle()
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Switch Model (xAI Direct)"))
+    act(() => t.keys.pressEnter())
+    await t.settle()
+
+    expect(sets).toHaveLength(1)
+    expect(sets[0].value).toBe("grok-direct --provider xai")
+    t.destroy()
+  })
+
+  test("single visible group member degrades to direct provider row", async () => {
+    const opts = {
+      provider: "xai",
+      model: "grok-direct",
+      providers: [
+        { slug: "xai", name: "xAI Direct", is_current: true, total_models: 1, models: ["grok-direct"] },
+        { slug: "openai-api", name: "OpenAI API", total_models: 1, models: ["gpt-5"] },
+      ],
+    }
+    const t = await mountNode(<Open />, {
+      handlers: { "model.options": () => opts },
+    })
+    await until(t, () => t.frame().includes("xAI Direct"))
+    expect(t.frame()).not.toContain("xAI Grok")
+
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Switch Model (xAI Direct)"))
+    t.destroy()
+  })
+
 })
