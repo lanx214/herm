@@ -121,11 +121,12 @@ export function mapEvent(ev: GatewayEvent, side: Side): Action | null {
     }
 
     case "subagent.start":
+    case "subagent.spawn_requested":
     case "subagent.thinking":
     case "subagent.tool":
     case "subagent.progress":
     case "subagent.complete": {
-      const sub = ev.type.slice(9) as "start" | "thinking" | "tool" | "progress" | "complete"
+      const sub = (ev.type === "subagent.spawn_requested" ? "start" : ev.type.slice(9)) as "start" | "thinking" | "tool" | "progress" | "complete"
       // Feed the turn-wide accumulator so the completed tree can be
       // persisted (spawn_tree.save) and the Agents tab can read live
       // tool trails without its own event listener.

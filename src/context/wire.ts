@@ -33,6 +33,7 @@ export type GatewayEvent = ({
   | { type: "voice.status"; payload?: { state?: "idle" | "listening" | "transcribing" } }
   | { type: "voice.transcript"; payload?: { text?: string; no_speech_limit?: boolean } }
   | { type: "subagent.start"; payload: SubagentPayload }
+  | { type: "subagent.spawn_requested"; payload: SubagentPayload }
   | { type: "subagent.thinking"; payload: SubagentPayload }
   | { type: "subagent.tool"; payload: SubagentPayload }
   | { type: "subagent.progress"; payload: SubagentPayload }

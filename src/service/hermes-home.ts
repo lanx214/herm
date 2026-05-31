@@ -94,6 +94,7 @@ export interface HermesConfig {
     personality: string;
     skin: string;
     show_cost: boolean;
+    tui_agents_nudge?: boolean;
   };
   curator: {
     enabled: boolean;
@@ -487,6 +488,7 @@ export async function readConfig(): Promise<HermesConfig | null> {
         personality: raw?.display?.personality ?? "default",
         skin: raw?.display?.skin ?? "default",
         show_cost: raw?.display?.show_cost ?? false,
+        tui_agents_nudge: raw?.display?.tui_agents_nudge,
       },
       curator: {
         enabled: raw?.curator?.enabled ?? true,

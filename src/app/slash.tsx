@@ -248,6 +248,8 @@ export function useSlash(c: SlashCtx): (cmd: SlashCommand, arg?: string) => void
         case "resume":
           if (arg) { void x.switchSession(arg); return }
           x.goTo(TAB_SLASH.sessions.tab, TAB_SLASH.sessions.sub); return
+        case "agents":
+          x.goTo(TAB_SLASH.agents.tab, TAB_SLASH.agents.sub); return
         case "branch":
           x.session.branch(arg || undefined).then(id => id
             ? void x.switchSession(id)

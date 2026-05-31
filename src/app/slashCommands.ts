@@ -35,6 +35,7 @@ export type SlashCommand = {
 export const LOCAL_NAMES = new Set([
   "clear", "new", "theme", "help", "keys", "logs", "title",
   "rollback", "save", "history", "status", "usage", "profile", "steer",
+  "agents",
   "reload", "reload-mcp", "reload-skills", "chafa", "splash", "skin",
   // parity: session-mutating commands the slash-worker can't service
   "resume", "branch", "compress", "undo", "redo", "retry", "model", "quit",
@@ -64,6 +65,7 @@ export const LOCAL_COMMANDS: ReadonlyArray<SlashCommand> = [
   { name: "status",  description: "Version, model, paths",       category: "Info",   aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "usage",   description: "Tokens, context fill, cost",   category: "Info",   aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "profile", description: "Active profile details",       category: "Info",   aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
+  { name: "agents", description: "Open the Agents tab",             category: "Client", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "steer",   description: "Inject a note mid-turn (no interrupt)", category: "Session", aliases: [], argsHint: "[text]", subcommands: [], source: "local", target: "local" },
   { name: "reload-mcp", description: "Restart MCP servers & rediscover tools", category: "Session", aliases: [], argsHint: "[now|always]", subcommands: ["now", "always"], source: "local", target: "local" },
   { name: "reload", description: "Hot-reload ~/.hermes/.env (API keys)", category: "Session", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },

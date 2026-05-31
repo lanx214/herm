@@ -36,6 +36,7 @@ type Ctx = {
   setStatus: (s: string) => void
   setSkin: (s: SkinState) => void
   setErrorPulse: (v: boolean) => void
+  onEvent?: (ev: GatewayEvent) => void
 }
 
 // Events that mutate the in-progress assistant turn. Everything else
@@ -45,6 +46,7 @@ const STREAM_EVENTS = new Set<GatewayEvent["type"]>([
   "message.start",
   "message.delta", "reasoning.delta", "reasoning.available", "thinking.delta",
   "tool.start", "tool.progress", "tool.generating",
+  "subagent.start", "subagent.spawn_requested", "subagent.thinking", "subagent.tool", "subagent.progress",
 ])
 
 export function useStream(c: Ctx) {
@@ -113,6 +115,7 @@ export function useStream(c: Ctx) {
       if (STREAM_EVENTS.has(ev.type)) return
       if (ev.type === "status.update" && ev.payload?.kind === "lifecycle") return
     }
+    x.onEvent?.(ev)
     const action = mapEvent(ev, {
       onReady: () => {
         x.session.boot(x.launchRef.current).then((r) => {

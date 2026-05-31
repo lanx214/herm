@@ -55,6 +55,8 @@ import { BackgroundProvider } from "./app/background"
 import { useVoice } from "./voice/useVoice"
 import { VoiceIndicator } from "./voice/Indicator"
 import { sessionCapabilities } from "./app/sessionCapabilities"
+import { useHome } from "./home"
+import { agentsNudge, agentsNudgeEnabled, isAgentsSurface, TEXT as AGENTS_NUDGE_TEXT } from "./app/agentsNudge"
 
 type AppProps = { initialTheme?: string; gateway?: Gateway; launch?: Launch; keyOverrides?: Record<string, string> }
 
@@ -112,6 +114,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const autoSub = useCallback((i: number) => setSub(AUTOMATION_TAB, i), [setSub])
   const cfgSub = useCallback((i: number) => setSub(CONFIG_TAB, i), [setSub])
   const eikSub = useCallback((i: number) => setSub(EIKON_TAB, i), [setSub])
+  const agentsSub = SUB_TABS[AUTOMATION_TAB].indexOf("Profiles")
   const [hideSidebar, setHideSidebar] = useState(false)
   const [usage, setUsage] = useState<Usage | undefined>(undefined)
   const [info, setInfo] = useState<SessionInfo | null>(null)
@@ -320,9 +323,23 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   }, [busy, gw, toast])
   const onAttach = useCallback((r: ImageAttachResponse) => setAttachments(a => [...a, r]), [])
 
+  const cfg = useHome("config")
+  const nudge = useRef({ shown: false })
   const stream = useStream({
     dispatch, session, launchRef, sidRef, sessionStart, goalHook,
     setSid, setInfo, setReady, setTitle, setBusy, setUsage, setStatus, setSkin, setErrorPulse,
+    onEvent: ev => {
+      if (!agentsNudge(nudge.current, ev, {
+        enabled: agentsNudgeEnabled(cfg),
+        agentsSurface: isAgentsSurface(tab, subTabs[AUTOMATION_TAB] ?? 0, AUTOMATION_TAB, agentsSub),
+      })) return
+      toast.show({
+        variant: "info",
+        message: AGENTS_NUDGE_TEXT,
+        duration: 5000,
+        action: { label: "/agents", run: () => goTo(AUTOMATION_TAB, agentsSub) },
+      })
+    },
   })
   intr.current = stream.doInterrupt
 

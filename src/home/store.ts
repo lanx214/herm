@@ -214,6 +214,12 @@ export class HomeStore {
     for (const dep of DEPENDENTS.get(k) ?? []) this.invalidate(dep)
   }
 
+  setForTest<K extends SliceKey>(k: K, v: HomeState[K] | undefined): void {
+    if (v === undefined) delete this.data[k]
+    else this.data[k] = v
+    this.notify(k)
+  }
+
   /** Dispose all watchers and timers. Tests must call this. */
   close(): void {
     for (const ws of this.watchers.values()) for (const w of ws) w.close()
