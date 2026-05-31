@@ -7,7 +7,7 @@ import { hermesPath } from "../src/service/hermes-home"
 import {
   board, boardOf, detail, assignees, tailLog, q, resetKanban,
   currentBoard, listBoards, parseDiagnostics, maxSeverity, sortDiags,
-  boardStateOf, boardErrors, corruptBackupsOf,
+  boardStateOf, boardErrors, corruptBackupsOf, reclaimRun,
 } from "../src/service/hermes-kanban"
 import { Kanban } from "../src/tabs/Kanban"
 
@@ -20,7 +20,7 @@ const schema = (db: Database) => {
     created_at INTEGER, started_at INTEGER, completed_at INTEGER,
     result TEXT, last_spawn_error TEXT, worker_pid INTEGER,
     workspace_kind TEXT, workspace_path TEXT,
-    skills TEXT, max_runtime_seconds INTEGER
+    skills TEXT, max_runtime_seconds INTEGER, current_run_id INTEGER
   )`)
   db.run(`CREATE TABLE IF NOT EXISTS task_links (
     parent_id TEXT, child_id TEXT, PRIMARY KEY (parent_id, child_id))`)
@@ -79,6 +79,9 @@ beforeAll(() => {
   ins.run("t0", "one-liner idea", null, null,
     "triage", 0, now - 200, null, null, null, null)
   db.run("INSERT INTO task_links (parent_id, child_id) VALUES ('t1','t3'),('t2','t3')")
+  db.run(`INSERT INTO task_runs (id, task_id, profile, status, outcome, started_at, ended_at, summary, error, worker_pid)
+    VALUES (101, 't2', 'builder', 'running', NULL, ?, NULL, NULL, NULL, 4242)`, [now - 60])
+  db.run("UPDATE tasks SET current_run_id = 101 WHERE id = 't2'")
   db.run("INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?,?,?,?)",
     ["t1", "kaio", "check AWS reserved pricing too", now - 1000])
   db.close()
@@ -189,6 +192,45 @@ describe("hermes-kanban readers", () => {
     expect(tailLog("t2")).toContain("step 2")
     expect(tailLog("t2", 10)).not.toContain("boot")
     expect(tailLog("t1")).toBeNull()
+  })
+
+  test("reclaimRun() resolves active run id to task and shells through cli.exec argv", async () => {
+    const gw = new MockGateway({
+      "cli.exec": p => ({ blocked: false, code: 0, output: `Reclaimed ${(p.argv as string[])[4]}` }),
+    })
+    const res = await reclaimRun(gw, "default", 101, "operator test")
+    expect(res.task_id).toBe("t2")
+    expect(res.run_id).toBe(101)
+    expect(res.output).toBe("Reclaimed t2")
+    expect(gw.last("cli.exec")?.params).toEqual({
+      argv: ["kanban", "--board", "default", "reclaim", "t2", "--reason", "operator test"],
+      timeout: 30,
+    })
+  })
+
+  test("reclaimRun() rejects unknown or ended runs before claiming success", async () => {
+    const gw = new MockGateway()
+    await expect(reclaimRun(gw, "default", 999)).rejects.toThrow("cannot reclaim run 999")
+    expect(gw.last("cli.exec")).toBeUndefined()
+
+    const db = new Database(hermesPath("kanban.db"))
+    db.run("UPDATE task_runs SET ended_at = ?, status = 'reclaimed', outcome = 'reclaimed' WHERE id = 101", [now])
+    db.close()
+    resetKanban()
+    await expect(reclaimRun(gw, "default", 101)).rejects.toThrow("cannot reclaim run 101")
+    expect(gw.last("cli.exec")).toBeUndefined()
+
+    const fix = new Database(hermesPath("kanban.db"))
+    fix.run("UPDATE task_runs SET ended_at = NULL, status = 'running', outcome = NULL WHERE id = 101")
+    fix.close()
+    resetKanban()
+  })
+
+  test("reclaimRun() propagates raw cli.exec failure output", async () => {
+    const gw = new MockGateway({
+      "cli.exec": () => ({ blocked: false, code: 1, output: "cannot reclaim t2 (not running or unknown id)" }),
+    })
+    await expect(reclaimRun(gw, "default", 101)).rejects.toThrow("cannot reclaim t2")
   })
 
   test("q() leaves plain ids, quotes metacharacters", () => {
@@ -402,6 +444,46 @@ describe("Kanban tab", () => {
     await act(async () => { await t.keys.typeText("y") })
     await until(t, () => cmds.length === 1)
     expect(cmds[0]).toBe("hermes kanban --board default archive t4")
+    t.destroy()
+  })
+
+  test("x on running task confirms and reclaims the active run via cli.exec argv", async () => {
+    const gw = new MockGateway({
+      "cli.exec": () => ({ blocked: false, code: 0, output: "Reclaimed t2" }),
+      "shell.exec": p => /\bdiagnostics\b/.test(p.command as string)
+        ? ({ stdout: "[]", stderr: "", code: 0 })
+        : ({ stdout: "", stderr: "", code: 0 }),
+    })
+    const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
+    await until(t, () => t.frame().includes("Kanban · 3 boards"))
+    for (let i = 0; i < 4; i++) { act(() => t.keys.pressArrow("right")); await t.settle() }
+    await until(t, () => t.frame().includes("research perf"))
+    await act(async () => { await t.keys.typeText("x") })
+    await until(t, () => t.frame().includes("Terminate run?"))
+    await act(async () => { await t.keys.typeText("y") })
+    await until(t, () => gw.last("cli.exec") !== undefined)
+    expect(gw.last("cli.exec")?.params).toEqual({
+      argv: ["kanban", "--board", "default", "reclaim", "t2", "--reason", "operator terminated run"],
+      timeout: 30,
+    })
+    await until(t, () => /Reclaimed t2 run #101/.test(t.frame()))
+    t.destroy()
+  })
+
+  test("x on running task surfaces cli.exec failure output", async () => {
+    const gw = new MockGateway({
+      "cli.exec": () => ({ blocked: false, code: 1, output: "cannot reclaim t2 (not running or unknown id)" }),
+      "shell.exec": p => /\bdiagnostics\b/.test(p.command as string)
+        ? ({ stdout: "[]", stderr: "", code: 0 })
+        : ({ stdout: "", stderr: "", code: 0 }),
+    })
+    const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
+    await until(t, () => t.frame().includes("Kanban · 3 boards"))
+    for (let i = 0; i < 4; i++) { act(() => t.keys.pressArrow("right")); await t.settle() }
+    await act(async () => { await t.keys.typeText("x") })
+    await until(t, () => t.frame().includes("Terminate run?"))
+    await act(async () => { await t.keys.typeText("y") })
+    await until(t, () => t.frame().includes("cannot reclaim t2"))
     t.destroy()
   })
 

@@ -3,8 +3,8 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import type { BorderSides, ScrollBoxRenderable } from "@opentui/core"
 import {
   boardStateOf, detailOf, tailLogOf, assignees, q, STATUSES,
-  currentBoard, listBoards, resetKanban, patchTask,
-  parseDiagnostics, maxSeverity, sortDiags,
+  currentBoard, listBoards, resetKanban, patchTask, reclaimRun,
+  parseDiagnostics, maxSeverity, sortDiags, RUN_RECLAIM_REASON,
   type Task, type Status, type Detail, type Board,
   type Diag, type Severity, type BoardError,
 } from "../service/hermes-kanban"
@@ -52,7 +52,7 @@ import { load as loadPrefs, set as setPref, type KanbanPrefs } from "../context/
 //   Space    fold / chip           Esc close pane      r reload
 //   n/N      create/child          a assign            c comment
 //   u        unblock               d archive           l worker log
-//   D        dispatch              b new board
+//   x        terminate active run  D dispatch          b new board
 
 type Sh = { stdout: string; stderr: string; code: number }
 type Tier = "head" | "filter" | "grid" | "pane"
@@ -604,7 +604,7 @@ const SidePane = memo((p: { pane: Pane; on: boolean; sel: number; diags: Diag[] 
         <text fg={theme.textMuted}>
           {p.on
             ? "Tab/↑↓ field  Enter edit  Esc grid  a assign  c comment  l log"
-            : "Tab into pane  a assign  c comment  u unblock  d archive  l log  N child"}
+            : "Tab into pane  a assign  c comment  u unblock  x terminate  d archive  l log  N child"}
         </text>
       </box>
     </box>
@@ -975,6 +975,26 @@ export const Kanban = memo((props: { focused?: boolean }) => {
       return void toast.show({ variant: "info", message: `No worker log for ${t.id}` })
     setPane({ kind: "log", slug: s, id: t.id, text })
   }, [toast])
+
+  const terminateRun = useCallback((t: Task) => {
+    const d = detailOf(live.current.at, t.id)
+    const run = d?.runs.find(r => r.ended_at === null && r.status === "running")
+    if (!run)
+      return void toast.show({ variant: "info", message: `No active run for ${t.id}` })
+    return openConfirm(dialog, {
+      title: "Terminate run?", danger: true, yes: "terminate",
+      body: `${t.id} run #${run.id}\n\nReclaims the task through Hermes Agent so run bookkeeping, events, and worker termination semantics stay upstream-owned.`,
+    }).then(ok => {
+      if (!ok) return
+      return reclaimRun(gw, live.current.at, run.id, RUN_RECLAIM_REASON)
+        .then(r => {
+          toast.show({ variant: "success", message: `Reclaimed ${r.task_id} run #${r.run_id}` })
+          resetKanban()
+          load()
+        })
+        .catch((e: Error) => void toast.show({ variant: "error", message: trunc(e.message, 160) }))
+    })
+  }, [dialog, gw, toast, load])
   // Invoked by Enter when tier=pane. Each one targets the CURRENT
   // task (live.current.task) via the right write path: patchTask
   // for fields the dashboard writes directly, shell.exec for status
@@ -1134,10 +1154,11 @@ export const Kanban = memo((props: { focused?: boolean }) => {
     { key: "S", title: "Specify all",   when: () => true,            run: () => void specifyAll() },
     { key: "u", title: "Unblock",       when: t => t?.status === "blocked" || t?.status === "scheduled", run: t => void unblock(t!) },
     { key: "d", title: "Archive",       when: t => !!t,              run: t => void archive(t!) },
+    { key: "x", title: "Terminate",     when: t => t?.status === "running", run: t => void terminateRun(t!) },
     { key: "l", title: "Worker log",    when: t => !!t,              run: t => showLog(t!) },
     { key: "b", title: "New board",     when: () => true,            run: () => void newBoard() },
     { key: "D", title: "Dispatch",      when: () => true,            run: () => void dispatch() },
-  ], [create, assign, comment, specify, specifyAll, unblock, archive, showLog, newBoard, dispatch])
+  ], [create, assign, comment, specify, specifyAll, unblock, archive, terminateRun, showLog, newBoard, dispatch])
 
   const isOpen = open.has(at)
   const paneOpen = pane?.kind === "detail"

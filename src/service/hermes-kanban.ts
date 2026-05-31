@@ -69,6 +69,17 @@ export type Run = {
   worker_pid: number | null
 }
 
+export type KanbanCliResult = {
+  blocked: boolean
+  code: number
+  output: string
+}
+
+export type ReclaimResult = KanbanCliResult & {
+  task_id: string
+  run_id: number
+}
+
 export type Event = {
   id: number; kind: string
   payload: unknown | null
@@ -213,6 +224,8 @@ export const sortDiags = (ds: Diag[]): Diag[] =>
 
 const DEFAULT = "default"
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+export const RUN_RECLAIM_REASON = "operator terminated run"
 
 /** Shared Hermes root for kanban paths — mirrors upstream
  *  hermes_cli/kanban_db.py::kanban_home(). HERMES_KANBAN_HOME wins
@@ -582,6 +595,36 @@ const runsOf = (conn: Database, id: string): Run[] => {
        FROM task_runs WHERE task_id = ? ORDER BY id`,
     ).all(id) as Array<Record<string, unknown>>).map(toRun)
   } catch { return [] }
+}
+
+export function taskIdForRun(s: string, runId: number): string | null {
+  const conn = dbOf(s)
+  if (!conn) return null
+  try {
+    const row = conn.query(
+      "SELECT task_id FROM task_runs WHERE id = ? AND ended_at IS NULL AND status = 'running'",
+    ).get(runId) as { task_id: string } | null
+    return row?.task_id ?? null
+  } catch { return null }
+}
+
+export async function reclaimRun(
+  gw: { request<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> },
+  s: string,
+  runId: number,
+  reason: string = RUN_RECLAIM_REASON,
+): Promise<ReclaimResult> {
+  if (!Number.isInteger(runId) || runId <= 0) throw new Error(`invalid run id: ${runId}`)
+  const taskId = taskIdForRun(s, runId)
+  if (!taskId) throw new Error(`cannot reclaim run ${runId} (not running or unknown id)`)
+  const res = await gw.request<KanbanCliResult>("cli.exec", {
+    argv: ["kanban", "--board", s, "reclaim", taskId, "--reason", reason],
+    timeout: 30,
+  })
+  const out = (res.output ?? "").trim()
+  if (res.blocked) throw new Error(res.output || `cli.exec blocked: ${out}`)
+  if (res.code !== 0) throw new Error(out || `exit ${res.code}`)
+  return { ...res, output: out, task_id: taskId, run_id: runId }
 }
 
 const eventsOf = (conn: Database, id: string): Event[] => {
