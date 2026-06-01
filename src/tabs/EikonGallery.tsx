@@ -21,19 +21,29 @@ import { BUNDLED_EIKON_DIR } from "../components/avatar/bundled"
 import { hermesPath } from "../service/hermes-home"
 import * as prefs from "../context/preferences"
 import { eikon } from "../service/eikon"
+import { openUrl } from "../utils/open-file"
 
 type Row = {
   path: string; name: string; slug: string; author?: string; bundled: boolean
   w: number; h: number; url?: string; hasSource: boolean
 }
 
-export const EikonGallery = memo((props: { focused: boolean; onEdit?: (name: string) => void }) => {
+export const WEB_GALLERY_URL = "https://eikon.liftaris.dev"
+
+type Props = {
+  focused: boolean
+  onEdit?: (name: string) => void
+  opener?: (url: string) => boolean
+}
+
+export const EikonGallery = memo((props: Props) => {
   const theme = useTheme().theme
   const dialog = useDialog()
   const toast = useToast()
   const keys = useKeys()
   const follow = useFollow("gal")
   const rev = useSyncExternalStore(eikon.onRevision, eikon.revision)
+  const opener = props.opener ?? openUrl
 
   const rows = useMemo<Row[]>(() => {
     const user = hermesPath("eikons")
@@ -53,19 +63,27 @@ export const EikonGallery = memo((props: { focused: boolean; onEdit?: (name: str
   }, [rev])
 
   const [sel, setSel] = useState(0)
-  useEffect(() => { if (sel >= rows.length) setSel(Math.max(0, rows.length - 1)) }, [rows.length, sel])
+  useEffect(() => { if (sel > rows.length) setSel(rows.length) }, [rows.length, sel])
 
-  const cur = rows[sel]
+  const rowSel = sel - 1
+  const cur = rows[rowSel]
   const active = prefs.usePref("eikon")
   const parsed = useMemo<ParsedEikon | undefined>(() => {
     if (!cur) return undefined
     try { return parseEikon(readFileSync(cur.path, "utf8")) } catch { return undefined }
   }, [cur])
 
-  const activate = () => {
-    if (!cur) return
-    prefs.set("eikon", cur.slug)
-    toast.show({ variant: "success", message: `Avatar → ${cur.name}` })
+  const web = useCallback(() => {
+    const ok = opener(WEB_GALLERY_URL)
+    toast.show(ok
+      ? { variant: "info", message: "Opening web gallery…" }
+      : { variant: "error", message: "No browser opener available." })
+  }, [opener, toast])
+
+  const activate = (row = cur) => {
+    if (!row) return
+    prefs.set("eikon", row.slug)
+    toast.show({ variant: "success", message: `Avatar → ${row.name}` })
   }
 
   const doNew = useCallback(async () => {
@@ -104,8 +122,11 @@ export const EikonGallery = memo((props: { focused: boolean; onEdit?: (name: str
   useKeyboard(key => {
     if (!props.focused || dialog.open()) return
     if (handleListKey(keys, key, {
-      count: rows.length, setSel, ...follow.opts,
-      onActivate: activate,
+      count: rows.length + 1,
+      setSel,
+      page: follow.opts.page,
+      scrollTo: n => { if (n > 0) follow.ref.current?.scrollChildIntoView(follow.id(n)) },
+      onActivate: () => sel === 0 ? web() : activate(),
       onDelete: () => void del(),
       onNew: doNew,
     })) return
@@ -115,17 +136,25 @@ export const EikonGallery = memo((props: { focused: boolean; onEdit?: (name: str
   return (
     <box flexDirection="column" flexGrow={1} minWidth={0}>
       <box flexDirection="row" flexGrow={1}>
-        <TabShell title={`Gallery (${rows.length})`} focus={props.focused} grow={2}>
+        <TabShell title={`Gallery (${rows.length})`} focus={props.focused} grow={3} titleRight={
+          <box height={1} paddingX={1}
+               backgroundColor={theme.backgroundElement}
+               onMouseMove={() => setSel(0)} onMouseDown={() => { setSel(0); web() }}>
+            <text fg={sel === 0 ? theme.primary : theme.text} wrapMode="none">
+              <strong>{sel === 0 ? "▸ [ Access Web Gallery ]" : "  [ Access Web Gallery ]"}</strong>
+            </text>
+          </box>
+        }>
           <scrollbox ref={follow.ref} scrollY flexGrow={1} verticalScrollbarOptions={VBAR}>
             {rows.length === 0
               ? <text fg={theme.textMuted}>No eikons found.</text>
               : rows.map((r, i) => {
-                  const on = i === sel
+                  const on = i === rowSel
                   const here = r.slug === active
                   return (
-                    <box key={r.path} id={follow.id(i)} flexDirection="row" height={2}
+                    <box key={r.path} id={follow.id(i + 1)} flexDirection="row" height={2}
                          backgroundColor={on ? theme.backgroundElement : undefined}
-                         onMouseMove={() => setSel(i)} onMouseDown={activate}>
+                         onMouseMove={() => setSel(i + 1)} onMouseDown={() => { setSel(i + 1); activate(r) }}>
                       <box width={2}><text fg={on ? theme.primary : theme.textMuted}>{on ? "▸ " : "  "}</text></box>
                       <box flexDirection="column" flexGrow={1} minWidth={0}>
                         <box height={1}><text fg={here ? theme.accent : theme.text}>
@@ -153,8 +182,9 @@ export const EikonGallery = memo((props: { focused: boolean; onEdit?: (name: str
         </TabShell>
       </box>
       <HintBar pairs={[
-        ["↑↓", "select"], [keys.print("list.activate"), "use"],
-        ["e", "edit in studio"], [keys.print("list.new"), "new / install"],
+        ["↑↓", "select"], [keys.print("list.activate"), sel === 0 ? "open web gallery" : "use"],
+        ...(cur && props.onEdit ? [["e", "edit in studio"] as const] : []),
+        [keys.print("list.new"), "new / install"],
         ...(cur && !cur.bundled ? [[keys.print("list.delete"), "delete"] as const] : []),
       ]} />
     </box>
