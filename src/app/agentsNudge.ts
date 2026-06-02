@@ -13,7 +13,7 @@ export type AgentsNudgeState = {
 }
 
 export function agentsNudgeEnabled(cfg: AgentsNudgeConfig | null | undefined): boolean {
-  return cfg?.display?.tui_agents_nudge === true
+  return cfg?.display?.tui_agents_nudge !== false
 }
 
 export function isAgentsSurface(tab: number, sub: number, agentsTab: number, agentsSub: number): boolean {

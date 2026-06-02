@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { agentsNudge, agentsNudgeEnabled, isAgentsSurface, TEXT } from "../src/app/agentsNudge"
 
 describe("agents nudge", () => {
-  test("reads the display.tui_agents_nudge config key only", () => {
+  test("defaults display.tui_agents_nudge on unless explicitly disabled", () => {
     expect(agentsNudgeEnabled({ display: { tui_agents_nudge: true } })).toBe(true)
     expect(agentsNudgeEnabled({ display: { tui_agents_nudge: false } })).toBe(false)
-    expect(agentsNudgeEnabled({ display: {} })).toBe(false)
-    expect(agentsNudgeEnabled(null)).toBe(false)
+    expect(agentsNudgeEnabled({ display: {} })).toBe(true)
+    expect(agentsNudgeEnabled({})).toBe(true)
+    expect(agentsNudgeEnabled(null)).toBe(true)
   })
 
   test("fires once for first subagent event and resets on message.start", () => {
