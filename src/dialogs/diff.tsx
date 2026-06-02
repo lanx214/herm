@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { MouseEvent, ParsedKey, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/react"
-import { useGateway } from "../context/gateway"
 import type { DialogContext } from "../ui/dialog"
-import { useToast } from "../ui/toast"
 import { useTheme } from "../theme"
 import type { FileDiff, Hunk } from "../components/chat/diff-model"
 import { DiffBlock } from "../components/chat/DiffBlock"
@@ -83,8 +81,6 @@ const HunkView = ({ h, on, state, action }: { h: Hunk; on: boolean; state?: Stat
 
 const DiffDialog = (props: Props) => {
   const theme = useTheme().theme
-  const gw = useGateway()
-  const toast = useToast()
   const [file, setFile] = useState(Math.min(props.at, props.files.length - 1))
   const [sel, setSel] = useState(0)
   const [state, setState] = useState<State>({})
@@ -99,20 +95,7 @@ const DiffDialog = (props: Props) => {
 
   const act = (h: Hunk | undefined, kind: Decision) => {
     if (!h || state[h.id] === "pending") return
-    setState(s => ({ ...s, [h.id]: "pending" }))
-    gw.request("diff.hunk.respond", {
-      action: kind === "accepted" ? "accept" : "reject",
-      scope: "once",
-      hunk_id: h.id,
-      tool_id: cur.tool,
-      path: cur.path,
-      old_start: h.oldStart,
-      old_lines: h.oldLines,
-      new_start: h.newStart,
-      new_lines: h.newLines,
-      patch: h.patch,
-    }).then(() => setState(s => ({ ...s, [h.id]: kind })))
-      .catch((e: Error) => { setState(s => ({ ...s, [h.id]: "error" })); toast.error(e) })
+    setState(s => ({ ...s, [h.id]: kind }))
   }
 
   useKeyboard((key) => {

@@ -31,14 +31,16 @@ type Handler = (params: Record<string, unknown>) => unknown | Promise<unknown>
 export class MockGateway extends EventEmitter implements Gateway {
   readonly calls: Array<{ method: string; params: Record<string, unknown> }> = []
   private handlers = new Map<string, Handler>()
+  private strict: boolean
   private buf: GatewayEvent[] = []
   private logs: string[] = []
   private sub = false
   private sid = ""
   ok = false
 
-  constructor(handlers: Record<string, Handler> = {}) {
+  constructor(handlers: Record<string, Handler> = {}, opts: { strict?: boolean } = {}) {
     super()
+    this.strict = opts.strict === true
     // Sane defaults so <App> boots without hanging.
     this.on$("session.create", () => ({ session_id: "test-sid" }))
     this.on$("session.resume", p => ({ session_id: p.session_id ?? "test-sid", messages: [] }))
@@ -100,7 +102,9 @@ export class MockGateway extends EventEmitter implements Gateway {
     const merged = this.sid && params.session_id === undefined ? { session_id: this.sid, ...params } : params
     this.calls.push({ method, params: merged })
     const h = this.handlers.get(method)
-    return (h ? await h(merged) : {}) as T
+    if (h) return await h(merged) as T
+    if (this.strict) throw new Error(`unknown gateway method: ${method}`)
+    return {} as T
   }
 
   /** Push an event; buffers until drained, then emits live. */

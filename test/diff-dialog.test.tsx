@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { act } from "react"
-import { mountNode, until } from "./harness"
+import { MockGateway, mountNode, until } from "./harness"
 import { DiffTabs } from "../src/components/chat/DiffTabs"
 import type { ToolPart } from "../src/types/message"
 
@@ -22,8 +22,9 @@ const tool: ToolPart = {
 }
 
 describe("diff dialog", () => {
-  test("opens split panes and sends hunk actions", async () => {
-    const t = await mountNode(<DiffTabs tools={[tool]} />, { width: 150, height: 42 })
+  test("opens split panes and records hunk actions locally", async () => {
+    const gw = new MockGateway({}, { strict: true })
+    const t = await mountNode(<DiffTabs tools={[tool]} />, { width: 150, height: 42, gw })
     await until(t, () => t.frame().includes("open split diff"))
     const rows = t.frame().split("\n")
     const y = rows.findIndex(l => l.includes("open split diff"))
@@ -35,17 +36,9 @@ describe("diff dialog", () => {
     expect(t.frame()).toContain("r reject")
 
     await act(async () => { t.keys.pressKey("a") })
-    await until(t, () => !!t.gw.last("diff.hunk.respond"))
-    expect(t.gw.last("diff.hunk.respond")?.params).toMatchObject({
-      action: "accept",
-      scope: "once",
-      hunk_id: "patch-1:src/foo.ts:1:1:0",
-      tool_id: "patch-1",
-      path: "src/foo.ts",
-      old_start: 1,
-      new_start: 1,
-    })
-    expect(String(t.gw.last("diff.hunk.respond")?.params.patch)).toContain("-old one")
+    await until(t, () => t.frame().includes("accepted · +1 / -1"))
+    expect(gw.calls.map(c => c.method)).not.toContain(["diff", "hunk", "respond"].join("."))
+    expect(gw.calls.map(c => c.method)).not.toContain("approval.respond")
     t.destroy()
   })
 })
