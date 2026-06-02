@@ -72,6 +72,21 @@ function parts(m: Message | undefined): Part[] {
   return m?.parts.filter(p => p.type === "thinking" || p.type === "tool") ?? []
 }
 
+function md(text: string) {
+  let out = ""
+  let code = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === "`") code = !code
+    if (!code && ch === "#" && i > 0 && text[i - 1] !== "\n" && !/\s/.test(text[i - 1])) {
+      const m = text.slice(i).match(/^#{1,6} /)
+      if (m) out += "\n"
+    }
+    out += ch
+  }
+  return out
+}
+
 type Pane = "reasoning" | "tools"
 
 function latest(messages: Message[]): Message | undefined {
@@ -172,7 +187,7 @@ export const ThoughtCloud = memo((props: {
           {body.map((p, i) =>
             p.type === "thinking"
               ? <box key={(p as ThinkingPart).key ?? `th-${i}`} minHeight={1} width="100%" flexShrink={0}>
-                  <markdown content={(p as ThinkingPart).content} fg={theme.markdownText} syntaxStyle={syntaxStyle} />
+                  <markdown content={md((p as ThinkingPart).content)} fg={theme.markdownText} syntaxStyle={syntaxStyle} />
                 </box>
               : <box key={(p as ToolPart).id || `t-${i}`} width="100%" flexShrink={0}>
                   <Tool tool={p as ToolPart} detail={detail === "hidden" ? "hidden" : "collapsed"} />
