@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import { Database } from "bun:sqlite"
@@ -43,6 +43,26 @@ describe("doctor probes", () => {
     expect(byId(items, "chafa")).toMatchObject({ status: "fail", label: "chafa" })
     expect(byId(items, "state-db")).toMatchObject({ status: "warn", label: "state.db" })
     expect(byId(items, "sessions-db")).toMatchObject({ status: "warn", label: "sessions.db" })
+  })
+
+  test("auth probe does not call unavailable hermes setup status module", async () => {
+    const home = tmp()
+    const seen: string[][] = []
+    await runDoctor({
+      hermesHome: home,
+      hermesAgentRoot: home,
+      env: { PATH: "/bin" },
+      command: async cmd => {
+        seen.push(cmd)
+        if (cmd[0] === "bun") return { ok: true, stdout: "1.3.4" }
+        if (cmd[0] === "chafa") return { ok: true, stdout: "Chafa version 1.14.5" }
+        return { ok: true, stdout: "Python 3.12.0" }
+      },
+      gateway: async () => ({ ok: true, details: "ready" }),
+    })
+
+    expect(seen.some(cmd => cmd.join(" ").includes("hermes_cli setup status"))).toBe(false)
+    expect(seen.some(cmd => cmd.join(" ").includes("setup status"))).toBe(false)
   })
 
   test("safe sqlite integrity checks report healthy db files", async () => {

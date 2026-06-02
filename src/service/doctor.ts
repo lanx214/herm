@@ -1,6 +1,6 @@
 import { accessSync, existsSync, statSync } from "fs"
 import { constants } from "fs"
-import { join, resolve } from "path"
+import { join } from "path"
 import { homedir } from "os"
 import { Database } from "bun:sqlite"
 import { GatewayClient, hermesAgentRoot as defaultAgentRoot, python as resolvePython } from "../context/gateway-client"
@@ -95,20 +95,6 @@ const result = (id: string, status: DoctorStatus, label: string, details: string
 const can = (path: string, mode: number) => {
   try { accessSync(path, mode); return true }
   catch { return false }
-}
-
-async function probeAuth(opts: DoctorOptions, env: Record<string, string | undefined>): Promise<DoctorProbe> {
-  const cmd = await run([resolvePython(opts.hermesAgentRoot || defaultAgentRoot(), process.platform), "-m", "hermes_cli", "setup", "status", "--json"], opts, env)
-  if (!cmd.ok) return result("auth", "warn", "Auth/setup", "setup.status unavailable", HINT.auth)
-  const text = clean(cmd.stdout)
-  if (!text) return result("auth", "warn", "Auth/setup", "setup.status returned no output", HINT.auth)
-  try {
-    const data = JSON.parse(text) as { ok?: boolean; authenticated?: boolean; status?: string }
-    const ok = data.ok === true || data.authenticated === true || data.status === "ok"
-    return result("auth", ok ? "ok" : "warn", "Auth/setup", text, ok ? undefined : HINT.auth)
-  } catch {
-    return result("auth", "warn", "Auth/setup", text, undefined)
-  }
 }
 
 async function defaultGateway(timeoutMs: number): Promise<DoctorGatewayResult> {
@@ -222,7 +208,6 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorProbe[]
   const hermesHome = opts.hermesHome || home(env)
   const db = (name: string) => join(hermesHome, name)
   return [
-    await probeAuth(opts, env),
     await probeGateway(opts),
     await probePython(opts, env),
     await probeChafa(opts, env),
