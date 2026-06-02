@@ -74,11 +74,26 @@ function parts(m: Message | undefined): Part[] {
 
 function md(text: string) {
   let out = ""
-  let code = false
+  let fence: { ch: string; n: number } | null = null
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
-    if (ch === "`") code = !code
-    if (!code && ch === "#" && i > 0 && text[i - 1] !== "\n" && !/\s/.test(text[i - 1])) {
+    const bol = i === 0 || text[i - 1] === "\n"
+    const line = bol ? text.slice(i).match(/^( {0,3})(`{3,}|~{3,})/) : null
+    if (line) {
+      const tick = line[2]
+      if (!fence) fence = { ch: tick[0], n: tick.length }
+      else if (tick[0] === fence.ch && tick.length >= fence.n) fence = null
+    }
+    if (!fence && ch === "`") {
+      const run = text.slice(i).match(/^`+/)?.[0] ?? "`"
+      const end = text.indexOf(run, i + run.length)
+      if (end !== -1) {
+        out += text.slice(i, end + run.length)
+        i = end + run.length - 1
+        continue
+      }
+    }
+    if (!fence && ch === "#" && i > 0 && text[i - 1] !== "\n" && !/\s/.test(text[i - 1])) {
       const m = text.slice(i).match(/^#{1,6} /)
       if (m) out += "\n"
     }

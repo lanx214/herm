@@ -108,4 +108,45 @@ describe("ThoughtCloud reasoning", () => {
     expect(f).toContain("Use hash#tag and x## Heading before text.")
     t.destroy()
   })
+
+  test("does not split multi-backtick code spans", async () => {
+    const messages: Message[] = [{
+      id: "a1", role: "assistant", timestamp: 0,
+      parts: [{
+        type: "thinking",
+        content: "Use ``x## Heading`` before text.",
+        streaming: false,
+      }],
+    }]
+    const t = await mountNode(
+      <box flexDirection="column" width="100%" height="100%">
+        <ThoughtCloud height={12} messages={messages} onResize={() => {}} />
+      </box>,
+      { width: 100, height: 20 },
+    )
+    await until(t, () => t.frame().includes("before text"), 3000)
+    expect(t.frame()).toContain("Use x## Heading before text.")
+    t.destroy()
+  })
+
+  test("does not split headings inside fenced code", async () => {
+    const messages: Message[] = [{
+      id: "a1", role: "assistant", timestamp: 0,
+      parts: [{
+        type: "thinking",
+        content: "before\n```md\nx## Heading\n```\nafter",
+        streaming: false,
+      }],
+    }]
+    const t = await mountNode(
+      <box flexDirection="column" width="100%" height="100%">
+        <ThoughtCloud height={12} messages={messages} onResize={() => {}} />
+      </box>,
+      { width: 100, height: 20 },
+    )
+    await until(t, () => t.frame().includes("after"), 3000)
+    const f = t.frame()
+    expect(f).toContain("x## Heading")
+    t.destroy()
+  })
 })
