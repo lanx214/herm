@@ -18,35 +18,23 @@ type Step = "provider" | "member" | "model"
 
 type Provider = NonNullable<ModelOptionsResponse["providers"]>[number]
 
-type ProviderGroup = {
-  readonly id: string
-  readonly title: string
-  readonly members: readonly string[]
-}
+type ProviderGroup = NonNullable<ModelOptionsResponse["groups"]>[number]
 
 type ProviderRow =
   | { readonly kind: "provider"; readonly provider: Provider }
   | { readonly kind: "group"; readonly group: ProviderGroup; readonly members: Provider[] }
 
-const GROUPS: readonly ProviderGroup[] = [
-  { id: "kimi", title: "Kimi / Moonshot", members: ["kimi-coding", "kimi-coding-cn"] },
-  { id: "minimax", title: "MiniMax", members: ["minimax", "minimax-oauth", "minimax-cn"] },
-  { id: "xai", title: "xAI Grok", members: ["xai", "xai-oauth"] },
-  { id: "google", title: "Google Gemini", members: ["gemini", "google-gemini-cli"] },
-  { id: "openai", title: "OpenAI", members: ["openai-codex", "openai-api"] },
-  { id: "opencode", title: "OpenCode", members: ["opencode-zen", "opencode-go"] },
-  { id: "copilot", title: "GitHub Copilot", members: ["copilot", "copilot-acp"] },
-]
+const slugMap = (groups: readonly ProviderGroup[] = []) =>
+  new Map(groups.flatMap(g => g.members.map(m => [m, g] as const)))
 
-const groupBySlug = new Map(GROUPS.flatMap(g => g.members.map(m => [m, g] as const)))
-
-const groupRows = (providers: readonly Provider[]): ProviderRow[] => {
+const groupRows = (providers: readonly Provider[], groups: readonly ProviderGroup[] = []): ProviderRow[] => {
   const bySlug = new Map(providers.map(p => [p.slug, p] as const))
-  const groups = new Map(GROUPS.map(g => [g.id, g] as const))
+  const byGroup = new Map(groups.map(g => [g.id, g] as const))
+  const byMember = slugMap(groups)
   const emitted = new Set<string>()
   const rows: ProviderRow[] = []
   for (const p of providers) {
-    const group = groupBySlug.get(p.slug)
+    const group = byMember.get(p.slug)
     if (!group) { rows.push({ kind: "provider", provider: p }); continue }
     if (emitted.has(group.id)) continue
     emitted.add(group.id)
@@ -55,7 +43,7 @@ const groupRows = (providers: readonly Provider[]): ProviderRow[] => {
       return member ? [member] : []
     })
     if (members.length <= 1) { rows.push({ kind: "provider", provider: members[0] ?? p }); continue }
-    rows.push({ kind: "group", group: groups.get(group.id) ?? group, members })
+    rows.push({ kind: "group", group: byGroup.get(group.id) ?? group, members })
   }
   return rows
 }
@@ -67,6 +55,16 @@ const currentInRow = (row: ProviderRow, current?: string) => row.kind === "provi
 const rowModels = (row: ProviderRow) => row.kind === "provider"
   ? row.provider.total_models
   : row.members.reduce((sum, p) => sum + (p.total_models ?? p.models?.length ?? 0), 0)
+
+const rowDesc = (row: ProviderRow) => {
+  const count = rowModels(row)
+  if (row.kind === "provider") return count ? `${count} models` : undefined
+  return [row.group.description, count ? `${count} models` : ""].filter(Boolean).join(" · ") || undefined
+}
+
+const rowSearch = (row: ProviderRow) => row.kind === "group"
+  ? [row.group.description, ...row.members.flatMap(p => [p.name, p.slug])].filter(Boolean).join(" ")
+  : row.provider.slug
 
 type Props = {
   gw: Gateway
@@ -109,16 +107,16 @@ const ModelPickerDialog = (props: Props) => {
   const onKey = useCallback((k: { name: string }) => {
     if (k.name === "tab" && !props.onApply) { setGlobal(g => !g); return true }
     if (k.name === "left" && step === "model") {
-      const g = provider ? groupBySlug.get(provider) : undefined
+      const g = provider ? slugMap(data?.groups ?? []).get(provider) : undefined
       setStep(g && group === g.id ? "member" : "provider")
       return true
     }
     if (k.name === "left" && step === "member") { setStep("provider"); return true }
     return false
-  }, [step, props.onApply, provider, group])
+  }, [step, props.onApply, provider, group, data?.groups])
 
   const backHint = step === "model"
-    ? "←: " + (provider && groupBySlug.get(provider)?.id === group ? "members" : "providers")
+    ? "←: " + (provider && slugMap(data?.groups ?? []).get(provider)?.id === group ? "members" : "providers")
     : step === "member" ? "←: providers" : ""
   const footer = props.onApply
     ? <text fg={theme.textMuted}>{backHint || " "}</text>
@@ -134,15 +132,18 @@ const ModelPickerDialog = (props: Props) => {
 
   if (!data) return <box width={50} padding={1}><text>Loading models…</text></box>
 
+  const groups = data.groups ?? []
+
   if (step === "provider") {
-    const rows = groupRows(data.providers ?? [])
+    const rows = groupRows(data.providers ?? [], groups)
       .toSorted((a, b) => Number(currentInRow(b, data.provider)) - Number(currentInRow(a, data.provider)))
     const current = rows.find(row => currentInRow(row, data.provider))
     const currentValue = current?.kind === "group" ? `group:${current.group.id}` : data.provider
     const options: SelectOption[] = rows.map(row => ({
       title: row.kind === "group" ? row.group.title : row.provider.name,
       value: row.kind === "group" ? `group:${row.group.id}` : row.provider.slug,
-      description: rowModels(row) ? `${rowModels(row)} models` : undefined,
+      description: rowDesc(row),
+      search: rowSearch(row),
       hint: row.kind === "group" ? "›" : undefined,
       category: currentInRow(row, data.provider) ? "Current" : "Available",
     }))
@@ -164,7 +165,7 @@ const ModelPickerDialog = (props: Props) => {
   }
 
   if (step === "member") {
-    const g = GROUPS.find(x => x.id === group)
+    const g = groups.find(x => x.id === group)
     const providers = data.providers ?? []
     const options: SelectOption[] = (g?.members ?? [])
       .flatMap(slug => {
@@ -175,6 +176,7 @@ const ModelPickerDialog = (props: Props) => {
         title: p.name,
         value: p.slug,
         description: p.total_models ? `${p.total_models} models` : undefined,
+        search: p.slug,
         category: p.is_current ? "Current" : "Available",
       }))
     return (

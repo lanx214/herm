@@ -20,6 +20,7 @@ export type SelectOption = {
   readonly title: string
   readonly value: string
   readonly description?: string
+  readonly search?: string
   readonly hint?: string
   readonly category?: string
 }
@@ -62,7 +63,8 @@ export const DialogSelect = (props: Props) => {
     const lower = filter.toLowerCase()
     return props.options.filter(o =>
       o.title.toLowerCase().includes(lower) ||
-      (o.description ?? "").toLowerCase().includes(lower)
+      (o.description ?? "").toLowerCase().includes(lower) ||
+      (o.search ?? "").toLowerCase().includes(lower)
     )
   }, [filter, props.options])
 

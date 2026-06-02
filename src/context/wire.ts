@@ -309,6 +309,12 @@ export type ConfigSetResponse = {
 export type ModelOptionsResponse = {
   provider?: string
   model?: string
+  groups?: {
+    id: string
+    title: string
+    description?: string
+    members: string[]
+  }[]
   providers?: {
     slug: string
     name: string

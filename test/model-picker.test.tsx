@@ -124,6 +124,10 @@ describe("model-picker", () => {
     const opts = {
       provider: "xai-oauth",
       model: "grok-oauth",
+      groups: [
+        { id: "xai", title: "xAI Grok", description: "Direct API or SuperGrok / Premium+ OAuth", members: ["xai", "xai-oauth"] },
+        { id: "openai", title: "OpenAI", description: "Codex CLI or direct OpenAI API", members: ["openai-codex", "openai-api"] },
+      ],
       providers: [
         { slug: "openai-api", name: "OpenAI API", total_models: 1, models: ["gpt-5"] },
         { slug: "xai", name: "xAI Direct", total_models: 1, models: ["grok-direct"] },
@@ -162,6 +166,10 @@ describe("model-picker", () => {
     const opts = {
       provider: "xai",
       model: "grok-direct",
+      groups: [
+        { id: "xai", title: "xAI Grok", description: "Direct API or SuperGrok / Premium+ OAuth", members: ["xai", "xai-oauth"] },
+        { id: "openai", title: "OpenAI", description: "Codex CLI or direct OpenAI API", members: ["openai-codex", "openai-api"] },
+      ],
       providers: [
         { slug: "xai", name: "xAI Direct", is_current: true, total_models: 1, models: ["grok-direct"] },
         { slug: "openai-api", name: "OpenAI API", total_models: 1, models: ["gpt-5"] },
@@ -176,6 +184,41 @@ describe("model-picker", () => {
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Switch Model (xAI Direct)"))
     t.destroy()
+  })
+
+  test("provider filter finds hidden group members", async () => {
+    const opts = {
+      provider: "anthropic",
+      model: "claude-3",
+      groups: [
+        { id: "openai", title: "OpenAI", description: "Codex CLI or direct OpenAI API", members: ["openai-codex", "openai-api"] },
+        { id: "xai", title: "xAI Grok", description: "Direct API or SuperGrok / Premium+ OAuth", members: ["xai", "xai-oauth"] },
+        { id: "minimax", title: "MiniMax", description: "Global, OAuth Coding Plan & China endpoints", members: ["minimax", "minimax-oauth", "minimax-cn"] },
+      ],
+      providers: [
+        { slug: "anthropic", name: "Anthropic", is_current: true, total_models: 2, models: ["claude-3", "claude-4"] },
+        { slug: "openai-codex", name: "OpenAI Codex", total_models: 1, models: ["gpt-5-codex"] },
+        { slug: "openai-api", name: "OpenAI API", total_models: 1, models: ["gpt-5"] },
+        { slug: "xai", name: "xAI Direct", total_models: 1, models: ["grok-direct"] },
+        { slug: "xai-oauth", name: "xAI OAuth", total_models: 1, models: ["grok-oauth"] },
+        { slug: "minimax", name: "MiniMax Global", total_models: 1, models: ["minimax"] },
+        { slug: "minimax-oauth", name: "MiniMax OAuth", total_models: 1, models: ["minimax-oauth"] },
+        { slug: "minimax-cn", name: "MiniMax China", total_models: 1, models: ["minimax-cn"] },
+      ],
+    }
+    for (const query of ["codex", "oauth", "cn"]) {
+      const t = await mountNode(<Open />, {
+        handlers: { "model.options": () => opts },
+      })
+      await until(t, () => t.frame().includes("Anthropic"))
+
+      await act(async () => { await t.keys.typeText(query) })
+      await until(t, () => t.frame().includes(query === "codex" ? "OpenAI" : query === "oauth" ? "xAI Grok" : "MiniMax"))
+      expect(t.frame()).not.toContain("No results found")
+      if (query === "oauth") expect(t.frame()).toContain("MiniMax")
+      if (query === "cn") expect(t.frame()).not.toContain("OpenAI")
+      t.destroy()
+    }
   })
 
 })
