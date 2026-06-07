@@ -38,7 +38,7 @@ export const LOCAL_NAMES = new Set([
   "reload", "reload-mcp", "reload-skills", "chafa", "splash", "skin",
   // parity: session-mutating commands the slash-worker can't service
   "resume", "branch", "compress", "undo", "redo", "retry", "model", "yolo", "quit",
-  "copy", "paste", "image", "background", "voice", "mouse", "redraw", "queue",
+  "copy", "paste", "image", "pdf", "background", "voice", "mouse", "redraw", "queue",
   "stash",
   // Ink-only UI toggles — local no-op with a note
   "compact", "setup",
@@ -73,6 +73,7 @@ export const LOCAL_COMMANDS: ReadonlyArray<SlashCommand> = [
   { name: "goal",   description: "Set/control the session goal",        category: "Session", aliases: [], argsHint: "[text|done|pause|resume|clear|status]", subcommands: ["done", "pause", "resume", "clear", "status"], source: "command", target: "gateway" },
   { name: "skin",   description: "Switch Hermes skin (+ theme + eikon)", category: "Client",  aliases: [], argsHint: "[name]", subcommands: [...SKINS], source: "local", target: "local" },
   { name: "voice",  description: "Toggle voice recording",               category: "Client",  aliases: [], argsHint: "[on|off|status|tts]", subcommands: ["on", "off", "status", "tts"], source: "local", target: "local" },
+  { name: "pdf",    description: "Attach PDF pages",                     category: "Client",  aliases: [], argsHint: "<path>", subcommands: [], source: "local", target: "local" },
   { name: "queue",  description: "Queue a prompt for the next idle turn", category: "Session", aliases: ["q"], argsHint: "[text]", subcommands: [], source: "local", target: "local" },
   { name: "yolo",   description: "Toggle approval bypass",                 category: "Session", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "quit",   description: "Exit herm",                             category: "Exit",    aliases: ["exit"], argsHint: "", subcommands: [], source: "local", target: "local" },

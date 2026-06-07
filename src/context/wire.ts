@@ -369,6 +369,52 @@ export type ImageAttachResponse = {
   message?: string
 }
 
+export type ImageAttachBytesRequest = {
+  session_id: string
+  content_base64?: string
+  data?: string
+  filename?: string
+  ext?: string
+}
+
+export type ImageAttachBytesResponse = ImageAttachResponse & {
+  attached: true
+  path: string
+  count: number
+  remainder: string
+  text: string
+  bytes: number
+}
+
+export type PdfAttachRequest = {
+  session_id: string
+  path?: string
+  content_base64?: string
+  data?: string
+  filename?: string
+  first_page?: number
+  last_page?: number
+}
+
+export type PdfAttachPage = {
+  path: string
+  page: number
+  name?: string
+  width?: number
+  height?: number
+  token_estimate?: number
+}
+
+export type PdfAttachResponse = {
+  attached: boolean
+  filename?: string
+  pages_attached?: number
+  pages?: PdfAttachPage[]
+  count?: number
+  text?: string
+  message?: string
+}
+
 export type DropDetectResponse =
   | { matched: false }
   | ({ matched: true; is_image: true; text: string } & Omit<ImageAttachResponse, "attached" | "message">)

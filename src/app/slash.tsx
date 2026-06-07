@@ -40,7 +40,7 @@ import { TAB_SLASH } from "./tabs"
 import { transcriptToMessages, type Action, type TurnState } from "./turnReducer"
 import type { SlashCommand } from "./slashCommands"
 import type { ComposerHandle } from "../components/chat/Composer"
-import type { SessionInfo, TranscriptMessage, ImageAttachResponse } from "../context/wire"
+import type { SessionInfo, TranscriptMessage, ImageAttachResponse, PdfAttachResponse } from "../context/wire"
 import type { Message, Usage } from "../types/message"
 import { text as msgText } from "../types/message"
 import type { useSession } from "./useSession"
@@ -372,6 +372,34 @@ export function useSlash(c: SlashCtx): (cmd: SlashCommand, arg?: string) => void
             .then(r => r.attached
               ? x.setAttachments(a => [...a, r])
               : toast.show({ variant: "warning", message: r.message ?? "attach failed" }))
+            .catch((e: Error) => toast.show({ variant: "error", message: e.message }))
+          return
+        case "pdf":
+          if (!arg.trim()) { toast.show({ variant: "info", message: "usage: /pdf <path>" }); return }
+          gw.request<PdfAttachResponse>("pdf.attach", { path: arg.trim() })
+            .then(r => {
+              if (!r.attached) {
+                toast.show({ variant: "warning", message: r.message ?? "attach failed" })
+                return
+              }
+              const pages = r.pages ?? []
+              if (pages.length === 0) {
+                toast.show({ variant: "warning", message: r.message ?? "no PDF pages attached" })
+                return
+              }
+              const file = r.filename ?? arg.trim().split(/[\\/]/).pop() ?? "PDF"
+              x.setAttachments(a => [...a, ...pages.map(p => ({
+                attached: true,
+                path: p.path,
+                count: r.count,
+                name: p.name ?? `${file} p.${p.page}`,
+                width: p.width,
+                height: p.height,
+                token_estimate: p.token_estimate,
+              }))])
+              const n = r.pages_attached ?? pages.length
+              toast.show({ variant: "success", message: `attached ${file} · ${n} ${n === 1 ? "page" : "pages"}` })
+            })
             .catch((e: Error) => toast.show({ variant: "error", message: e.message }))
           return
         case "background":
