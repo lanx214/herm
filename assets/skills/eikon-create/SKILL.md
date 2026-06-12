@@ -143,8 +143,8 @@ Once source files are in place:
 
 > Open the **Eikon** tab → `eikon` row → **<name>**. Tune zoom /
 > contrast / invert / symbols there, then **Ctrl+S** to bake or **Ctrl+U**
-> to bake and use. For official registry sharing, press `u` in Studio or
-> `s` in Gallery after baking; Herm previews the public bundle and GitHub PR
+> to bake and use. For official registry sharing, use **share** in Studio or
+> Library after baking; Herm previews the public bundle and GitHub PR
 > target before anything is submitted.
 
 Stop there. Studio writes `<name>.eikon` and `studio.json`.

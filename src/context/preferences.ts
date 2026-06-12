@@ -37,6 +37,8 @@ interface TuiPreferences {
   eikonPath?: string
   /** Active rasterizer name for the Eikon Studio tab */
   eikonRasterizer?: string
+  /** Catalog install follow-up activation preference */
+  eikonCatalogInstallActivation?: "ask" | "always" | "never"
   /** Spinner/avatar frame animations (off → static glyphs) */
   animations?: boolean
   /** Thought-cloud tool trail verbosity */

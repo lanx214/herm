@@ -293,7 +293,51 @@ describe("app", () => {
   })
 
 
-  test("marketplace detail preview does not change active sidebar preference", async () => {
+  test("Library New invokes /eikon-create from an empty Chat", async () => {
+    const t = await mount()
+    await until(t, () => t.frame().includes("Ready"))
+
+    act(() => t.keys.pressKey("5", { meta: true }))
+    await until(t, () => t.frame().includes("Library ("))
+    act(() => t.keys.pressKey("n"))
+    await until(t, () => t.gw.last("prompt.submit")?.params.text === "/eikon-create")
+    expect(t.frame()).toContain("Message Hermes")
+    t.destroy()
+  })
+
+  test("Library New preserves existing composer draft by staging /eikon-create", async () => {
+    const t = await mount()
+    await until(t, () => t.frame().includes("Ready"))
+    await act(async () => { await t.keys.typeText("draft prompt") })
+
+    act(() => t.keys.pressKey("5", { meta: true }))
+    await until(t, () => t.frame().includes("Library ("))
+    act(() => t.keys.pressKey("n"))
+    await until(t, () => t.frame().includes("Where would you like to create your Eikon?"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("draft prompt") && t.frame().includes("/eikon-create"))
+    expect(t.gw.last("prompt.submit")?.params.text).not.toBe("/eikon-create")
+    t.destroy()
+  })
+
+  test("Library New can start /eikon-create in a new session without carrying draft text", async () => {
+    const t = await mount()
+    await until(t, () => t.frame().includes("Ready"))
+    await act(async () => { await t.keys.typeText("draft prompt") })
+
+    act(() => t.keys.pressKey("5", { meta: true }))
+    await until(t, () => t.frame().includes("Library ("))
+    act(() => t.keys.pressKey("n"))
+    await until(t, () => t.frame().includes("Where would you like to create your Eikon?"))
+    act(() => t.keys.pressArrow("down"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.gw.last("prompt.submit")?.params.text === "/eikon-create")
+    expect(t.gw.calls.filter(c => c.method === "session.create").length).toBeGreaterThan(1)
+    expect(t.frame()).not.toContain("draft prompt")
+    t.destroy()
+  })
+
+  test("catalog detail preview does not change active sidebar preference", async () => {
     const HH = process.env.HERMES_HOME!
     const png = new Uint8Array([137, 80, 78, 71])
     let previewHits = 0
@@ -309,21 +353,21 @@ describe("app", () => {
         rows: Array.from({ length: 24 }, (_, i) => (i === 0 ? line : "").padEnd(48)),
       }),
     ].join("\n") + "\n"
-    const marketPreview = launch("marketone", "Kaio", "MARKET-PREVIEW-LINE")
+    const catalogPreview = launch("catalogone", "Kaio", "CATALOG-PREVIEW-LINE")
     const activePreview = launch("activeone", "Local", "ACTIVE-EIKON-LINE")
     const srv = Bun.serve({
       port: 0,
       fetch(req) {
         const path = new URL(req.url).pathname
         if (path === "/eikons/index.json") return Response.json([
-          { name: "marketone", author: "Kaio", width: 48, height: 24, poster: "M1", source: "marketone/", description: "market one" },
+          { name: "catalogone", author: "Kaio", width: 48, height: 24, poster: "M1", source: "catalogone/", description: "catalog one" },
         ])
-        if (path === "/eikons/marketone/marketone.eikon") {
+        if (path === "/eikons/catalogone/catalogone.eikon") {
           previewHits++
-          return new Response(marketPreview)
+          return new Response(catalogPreview)
         }
-        if (path === "/eikons/marketone/manifest.json") return Response.json({ name: "marketone", source: "source.png" })
-        if (path === "/eikons/marketone/source.png") return new Response(png)
+        if (path === "/eikons/catalogone/manifest.json") return Response.json({ name: "catalogone", source: "source.png" })
+        if (path === "/eikons/catalogone/source.png") return new Response(png)
         return new Response("404", { status: 404 })
       },
     })
@@ -343,15 +387,15 @@ describe("app", () => {
     act(() => { for (let i = 0; i < 4; i++) t.keys.pressArrow("right", { meta: true }) })
     await until(t, () => t.frame().includes("Library ("))
     act(() => t.keys.pressArrow("right", { shift: true }))
-    await until(t, () => t.frame().includes("Catalog (1)") && t.frame().includes("MARKET-PREVIEW-LINE") && t.frame().includes("ACTIVE-EIKON-LINE"))
-    expect(t.frame()).toContain("Details — marketone")
+    await until(t, () => t.frame().includes("Catalog (1)") && t.frame().includes("CATALOG-PREVIEW-LINE") && t.frame().includes("ACTIVE-EIKON-LINE"))
+    expect(t.frame()).toContain("Details — catalogone")
     expect(t.frame()).toContain("by Kaio")
-    expect(t.frame()).toContain("market one")
+    expect(t.frame()).toContain("catalog one")
     expect(t.frame()).toContain("not installed")
     expect(t.frame()).toContain("Trust")
     expect(t.frame()).toMatch(/Profile\s+default/)
     const lines = t.frame().split("\n")
-    const desc = lines.findIndex(l => l.includes("market one"))
+    const desc = lines.findIndex(l => l.includes("catalog one"))
     const chip = lines.findIndex((l, i) => i > desc && l.includes("idle"))
     const status = lines.findIndex(l => l.includes("Status"))
     expect(desc).toBeGreaterThan(-1)

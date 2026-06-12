@@ -3,7 +3,7 @@ import { act } from "react"
 import { existsSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { mountNode, until, type Harness } from "./harness"
-import { EikonGallery } from "../src/tabs/EikonGallery"
+import { EikonLibrary } from "../src/tabs/EikonLibrary"
 import { EikonStudio } from "../src/tabs/EikonStudio"
 import { eikon } from "../src/service/eikon"
 import * as prefs from "../src/context/preferences"
@@ -97,13 +97,13 @@ test("Eikon visual E2E: duplicate Nous draft, studio preview, submit, delete rel
   const frames: Record<string, string> = {}
 
   try {
-    await using gallery = await mountNode(<EikonGallery focused onEdit={() => {}} submit={submit} />, { width: 180, height: 54 })
-    await selectRow(gallery, name)
-    await until(gallery, () => gallery.frame().includes(`Preview — ${name}`))
-    snap("gallery", gallery, frames)
-    expect(frames.gallery).toContain(`● ${name}`)
-    expect(frames.gallery).toContain("● source")
-    expect(frames.gallery).toContain("Preview")
+    await using library = await mountNode(<EikonLibrary focused onEdit={() => {}} submit={submit} />, { width: 180, height: 54 })
+    await selectRow(library, name)
+    await until(library, () => library.frame().includes(`Preview — ${name}`))
+    snap("library", library, frames)
+    expect(frames.library).toContain(`● ${name}`)
+    expect(frames.library).toContain("● source")
+    expect(frames.library).toContain("Preview")
 
     await using studio = await mountNode(<EikonStudio focused name={name} />, { width: 180, height: 60 })
     const previewReady = caps.ffmpeg ? "E2E-PREVIEW" : "ffmpeg not installed"
@@ -113,39 +113,39 @@ test("Eikon visual E2E: duplicate Nous draft, studio preview, submit, delete rel
     expect(frames.studio).toContain("States")
     expect(frames.studio).toContain("e2e-stub")
 
-    act(() => gallery.keys.pressKey("s"))
-    await until(gallery, () => gallery.frame().includes("Submit eikon"))
-    snap("submit-open", gallery, frames)
-    act(() => gallery.keys.pressEnter())
-    await until(gallery, () => gallery.frame().includes("Included files"))
-    snap("submit-preview", gallery, frames)
+    act(() => library.keys.pressKey("s"))
+    await until(library, () => library.frame().includes("Submit eikon"))
+    snap("submit-open", library, frames)
+    act(() => library.keys.pressEnter())
+    await until(library, () => library.frame().includes("Included files"))
+    snap("submit-preview", library, frames)
     expect(frames["submit-preview"]).toContain(`${name}.eikon`)
     expect(frames["submit-preview"]).toContain("manifest.json")
     expect(frames["submit-preview"]).toContain("runtime-only")
     expect(frames["submit-preview"]).not.toContain("source/base.png")
     expect(requests).toHaveLength(0)
 
-    act(() => gallery.keys.pressKey("c"))
-    await until(gallery, () => gallery.frame().includes("public PR consent"))
-    act(() => gallery.keys.pressEnter())
-    await until(gallery, () => gallery.frame().includes("Submitted") && gallery.frame().includes("nous-e2e"))
-    snap("submitted", gallery, frames)
+    act(() => library.keys.pressKey("c"))
+    await until(library, () => library.frame().includes("public PR consent"))
+    act(() => library.keys.pressEnter())
+    await until(library, () => library.frame().includes("Submitted") && library.frame().includes("nous-e2e"))
+    snap("submitted", library, frames)
     expect(requests).toHaveLength(1)
     expect(requests[0]!.bundle.files.map(f => f.path).sort()).toEqual(["manifest.json", `${name}.eikon`])
     expect(requests[0]!.bundle.catalog.name).toBe(name)
     expect(requests[0]!.bundle.catalog.runtimeUrl).toContain(`${name}.eikon`)
 
-    act(() => gallery.keys.pressEscape())
-    await until(gallery, () => !gallery.frame().includes("Submit eikon"))
-    await selectRow(gallery, name)
-    act(() => gallery.keys.pressKey("d"))
-    await until(gallery, () => gallery.frame().includes(`Delete '${name}'?`))
-    snap("delete-confirm", gallery, frames)
+    act(() => library.keys.pressEscape())
+    await until(library, () => !library.frame().includes("Submit eikon"))
+    await selectRow(library, name)
+    act(() => library.keys.pressKey("d"))
+    await until(library, () => library.frame().includes(`Delete '${name}'?`))
+    snap("delete-confirm", library, frames)
     expect(frames["delete-confirm"]).toContain("active avatar")
     expect(frames["delete-confirm"]).toContain("clear the active avatar selection")
-    act(() => gallery.keys.pressEnter())
-    await until(gallery, () => !existsSync(seeded.dir) && !rowVisible(gallery, name))
-    snap("delete-reload", gallery, frames)
+    act(() => library.keys.pressEnter())
+    await until(library, () => !existsSync(seeded.dir) && !rowVisible(library, name))
+    snap("delete-reload", library, frames)
     expect(prefs.get("eikon")).toBeUndefined()
   } finally {
     un()

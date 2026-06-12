@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test"
 import { act } from "react"
-import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { mount, mountNode, until } from "./harness"
@@ -142,11 +142,20 @@ function group(props: { sub?: number } = {}) {
   return <EikonGroup focused sub={sub} setSub={i => { sub = i }} />
 }
 
-async function openMarketplaceTab(t: Awaited<ReturnType<typeof mount>>) {
+async function openCatalogTab(t: Awaited<ReturnType<typeof mount>>) {
   act(() => t.keys.pressKey("5", { meta: true }))
   await until(t, () => t.frame().includes("Library ("))
   act(() => t.keys.pressArrow("right", { shift: true }))
   await until(t, () => t.frame().includes("Catalog ("))
+}
+
+async function install(t: Awaited<ReturnType<typeof mountNode>>, name: string, use = false) {
+  act(() => t.keys.pressEnter())
+  await until(t, () => t.frame().includes("Install"))
+  act(() => t.keys.pressEnter())
+  await until(t, () => t.frame().includes(`Use '${name}' as active Eikon?`))
+  if (!use) act(() => t.keys.pressArrow("down"))
+  act(() => t.keys.pressEnter())
 }
 
 afterEach(() => {
@@ -160,11 +169,12 @@ afterEach(() => {
   else globalThis.__hermAvatarTimerStarts = baseAvatarTimerStarts
   delete process.env.EIKON_URL
   prefs.set("eikon", undefined)
+  prefs.set("eikonCatalogInstallActivation", undefined)
   rmSync(join(HH, "eikons"), { recursive: true, force: true })
 })
 
-describe("EikonMarketplace tab", () => {
-  test("Library is separate from Marketplace tab", async () => {
+describe("EikonCatalog tab", () => {
+  test("Library is separate from Catalog tab", async () => {
     const fx = catalog()
     process.env.EIKON_URL = fx.base
     await using t = await mountNode(group({ sub: 0 }), { width: 120, height: 28 })
@@ -238,20 +248,81 @@ describe("EikonMarketplace tab", () => {
     await until(t, () => t.frame().includes("Catalog (6)") && t.frame().includes("ARES-IDLE"))
 
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
+    await until(t, () => t.frame().includes("Install"))
     act(() => t.keys.pressEnter())
-    await until(t, () => eikon.list().some(x => x.name === "ares") && t.frame().includes("installed") && prefs.get("eikon") === "localone")
+    await until(t, () => t.frame().includes("Use 'ares' as active Eikon?") && prefs.get("eikon") === "localone")
     expect(eikon.list().find(x => x.name === "ares")!.hasSource).toBe(false)
-
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("set as active avatar"))
     act(() => t.keys.pressEnter())
     await until(t, () => prefs.get("eikon") === "ares" && t.frame().includes("▸ ● ares"))
     expect(t.frame()).toContain("▸ ● ares")
     fx.srv.stop()
   })
 
-  test("Marketplace details expose runtime-only package lifecycle truthfully", async () => {
+  test("remembered Catalog activation preferences skip future prompt", async () => {
+    let fx = catalog()
+    process.env.EIKON_URL = fx.base
+    prefs.set("eikonCatalogInstallActivation", "never")
+    await using t = await mountNode(group(), { width: 160, height: 48 })
+    await until(t, () => t.frame().includes("Catalog (6)") && t.frame().includes("ARES-IDLE"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Install"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => eikon.list().some(x => x.name === "ares") && t.frame().includes("installed"))
+    expect(t.frame()).not.toContain("Use 'ares' as active Eikon?")
+    expect(prefs.get("eikon")).toBeUndefined()
+    fx.srv.stop()
+
+    rmSync(join(HH, "eikons"), { recursive: true, force: true })
+    fx = catalog()
+    process.env.EIKON_URL = fx.base
+    prefs.set("eikonCatalogInstallActivation", "always")
+    await using u = await mountNode(group(), { width: 160, height: 48 })
+    await until(u, () => u.frame().includes("Catalog (6)") && u.frame().includes("ARES-IDLE"))
+    act(() => u.keys.pressEnter())
+    await until(u, () => u.frame().includes("Install"))
+    act(() => u.keys.pressEnter())
+    await until(u, () => prefs.get("eikon") === "ares" && u.frame().includes("▸ ● ares"))
+    expect(u.frame()).not.toContain("Use 'ares' as active Eikon?")
+    fx.srv.stop()
+    prefs.set("eikonCatalogInstallActivation", undefined)
+  })
+
+  test("remembered always still requires active replacement confirmation", async () => {
+    const fx = catalog()
+    process.env.EIKON_URL = fx.base
+    const old = body.replace("ARES-IDLE", "OLD-ARES")
+    eikon.ensure("ares")
+    writeFileSync(eikon.file("ares"), old)
+    writeFileSync(join(eikon.dir("ares"), "manifest.json"), JSON.stringify({
+      name: "ares",
+      origin: { sourceKey: `${fx.base}/other/`, identityKey: `${fx.base}/other/`, packageUrl: `${fx.base}/other/manifest.json` },
+    }, null, 2))
+    prefs.set("eikon", "ares")
+    prefs.set("eikonCatalogInstallActivation", "always")
+
+    await using t = await mountNode(group(), { width: 160, height: 48 })
+    await until(t, () => t.frame().includes("active name conflict"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Install"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Replace active 'ares'?"))
+    act(() => t.keys.pressKey("n"))
+    await until(t, () => !t.frame().includes("Replace active 'ares'?"))
+    expect(readFileSync(eikon.file("ares"), "utf8")).toBe(old)
+    expect(prefs.get("eikon")).toBe("ares")
+
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Install"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Replace active 'ares'?"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => readFileSync(eikon.file("ares"), "utf8") !== old)
+    expect(prefs.get("eikon")).toBe("ares")
+    fx.srv.stop()
+    prefs.set("eikonCatalogInstallActivation", undefined)
+  })
+
+  test("Catalog details expose runtime-only package lifecycle truthfully", async () => {
     const fx = packageCatalog()
     process.env.EIKON_URL = fx.base
     await using t = await mountNode(group(), { width: 120, height: 48 })
@@ -259,14 +330,12 @@ describe("EikonMarketplace tab", () => {
     expect(t.frame()).toContain("Source")
     expect(t.frame()).toContain("Compat: Compatible")
 
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
-    act(() => t.keys.pressEnter())
+    await install(t, "ares")
     await until(t, () => t.frame().includes("installed") && t.frame().includes("removable"))
     expect(t.frame()).not.toContain("source downloadable")
     expect(prefs.get("eikon")).toBeUndefined()
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("set as active avatar"))
+    await until(t, () => t.frame().includes("Use") || t.frame().includes("Delete"))
     expect(t.frame()).not.toContain("Download Source")
 
     act(() => t.keys.pressArrow("down"))
@@ -300,7 +369,7 @@ describe("EikonMarketplace tab", () => {
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Download Source") || t.frame().includes("No available actions."))
     expect(t.frame()).not.toContain("Replace active 'nous'?")
-    expect(t.frame()).not.toContain("Eikon only")
+    expect(t.frame()).not.toContain("Install + Source")
     srv.stop()
   })
 
@@ -326,12 +395,18 @@ describe("EikonMarketplace tab", () => {
   test("source-bearing installed package offers source download action", async () => {
     const fx = packageCatalog()
     process.env.EIKON_URL = fx.base
-    await using t = await mountNode(group(), { width: 160, height: 40 })
+    await using t = await mountNode(group(), { width: 300, height: 40 })
     await until(t, () => t.frame().includes("Catalog (2)") && t.frame().includes("mono"))
-    act(() => t.keys.pressArrow("right"))
-    await until(t, () => /▸ .*mono/.test(t.frame()))
+    const pos = () => {
+      const lines = t.frame().split("\n")
+      const y = lines.findIndex(l => l.includes("mono"))
+      return { x: Math.max(0, lines[y]?.indexOf("mono") ?? 0), y }
+    }
+    await act(async () => { const p = pos(); await t.mouse.click(p.x, p.y) })
+    await until(t, () => t.frame().includes("Install") && t.frame().includes("Details — mono"))
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
+    await until(t, () => t.frame().includes("Use 'mono' as active Eikon?"))
+    act(() => t.keys.pressArrow("down"))
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("source downloadable") && t.frame().includes("removable"))
     expect(eikon.list().find(x => x.name === "mono")!.hasSource).toBe(false)
@@ -339,7 +414,7 @@ describe("EikonMarketplace tab", () => {
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Download Source"))
     act(() => t.keys.pressArrow("down"))
-    act(() => t.keys.pressKey(" "))
+    act(() => t.keys.pressEnter())
     await until(t, () => eikon.list().find(x => x.name === "mono")!.hasSource)
     fx.srv.stop()
   })
@@ -347,18 +422,19 @@ describe("EikonMarketplace tab", () => {
   test("active package modal omits already-active and can download source", async () => {
     const fx = packageCatalog()
     process.env.EIKON_URL = fx.base
-    await using t = await mountNode(group(), { width: 160, height: 40 })
+    await using t = await mountNode(group(), { width: 300, height: 40 })
     await until(t, () => t.frame().includes("Catalog (2)") && t.frame().includes("mono"))
-    act(() => t.keys.pressArrow("right"))
-    await until(t, () => /▸ .*mono/.test(t.frame()))
+    const pos = () => {
+      const lines = t.frame().split("\n")
+      const y = lines.findIndex(l => l.includes("mono"))
+      return { x: Math.max(0, lines[y]?.indexOf("mono") ?? 0), y }
+    }
+    await act(async () => { const p = pos(); await t.mouse.click(p.x, p.y) })
+    await until(t, () => t.frame().includes("Install") && t.frame().includes("Details — mono"))
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
+    await until(t, () => t.frame().includes("Use 'mono' as active Eikon?"))
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("source downloadable") && t.frame().includes("removable"))
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("set as active avatar"))
-    act(() => t.keys.pressEnter())
-    await until(t, () => prefs.get("eikon") === "mono" && t.frame().includes("▸ ● mono"))
+    await until(t, () => prefs.get("eikon") === "mono" && t.frame().includes("Details — mono"))
 
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Download Source") && t.frame().includes("Delete"))
@@ -376,9 +452,7 @@ describe("EikonMarketplace tab", () => {
     process.env.EIKON_URL = fx.base
     await using t = await mountNode(group(), { width: 160, height: 40 })
     await until(t, () => t.frame().includes("Catalog (2)") && t.frame().includes("ARES-IDLE"))
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
-    act(() => t.keys.pressEnter())
+    await install(t, "ares")
     await until(t, () => t.frame().includes("installed") && t.frame().includes("removable"))
 
     act(() => t.keys.pressEnter())
@@ -396,25 +470,25 @@ describe("EikonMarketplace tab", () => {
     const fx = catalog()
     process.env.EIKON_URL = fx.base
     await using t = await mountNode(group(), { width: 180, height: 28 })
-    await until(t, () => t.frame().includes("Catalog (6)") && /▸ .*ares/.test(t.frame()))
+    await until(t, () => t.frame().includes("Catalog (6)") && t.frame().includes("Details — ares"))
     expect(t.frame()).toContain("[Space] preview")
 
     act(() => t.keys.pressArrow("right"))
-    await until(t, () => /▸ .*mono/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — mono"))
     act(() => t.keys.pressArrow("down"))
-    await until(t, () => /▸ .*delta/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — delta"))
     act(() => t.keys.pressArrow("left"))
-    await until(t, () => /▸ .*mono/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — mono"))
     act(() => t.keys.pressArrow("up"))
-    await until(t, () => /▸ .*ares/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — ares"))
 
     act(() => t.keys.pressKey("END"))
-    await until(t, () => /▸ .*gamma/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — gamma"))
     act(() => t.keys.pressArrow("down"))
     await t.settle()
-    expect(t.frame()).toMatch(/▸ .*gamma/)
+    expect(t.frame()).toContain("Details — gamma")
     act(() => t.keys.pressKey("HOME"))
-    await until(t, () => /▸ .*ares/.test(t.frame()))
+    await until(t, () => t.frame().includes("Details — ares"))
     await act(async () => { await t.keys.pressKey(" ") })
     await t.settle()
     expect(eikon.list().some(x => x.name === "ares")).toBe(false)
@@ -432,7 +506,7 @@ describe("EikonMarketplace tab", () => {
     expect(t.frame()).toContain("[Space] preview")
 
     act(() => t.keys.pressArrow("right"))
-    await until(t, () => /▸ .*mono/.test(t.frame()) && t.frame().includes("MONO-IDLE"))
+    await until(t, () => t.frame().includes("Details — mono") && t.frame().includes("MONO-IDLE"))
     expect(t.frame()).not.toContain("MONO-THINKING")
     expect(prefs.get("eikon")).toBeUndefined()
     fx.srv.stop()
@@ -448,7 +522,7 @@ describe("EikonMarketplace tab", () => {
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("ARES-THINKING"))
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("Eikon only"))
+    await until(t, () => t.frame().includes("Install"))
     fx.srv.stop()
   })
 
@@ -498,7 +572,7 @@ describe("EikonMarketplace tab", () => {
     stop()
   })
 
-  test("narrow marketplace renders selected preview in detail pane", async () => {
+  test("narrow catalog renders selected preview in detail pane", async () => {
     const fx = catalog()
     process.env.EIKON_URL = fx.base
     await using t = await mountNode(group(), { width: 100, height: 40 })
@@ -515,12 +589,12 @@ describe("EikonMarketplace tab", () => {
     fx.srv.stop()
   })
 
-  test("wide marketplace always renders detail preview beside the app sidebar", async () => {
+  test("wide catalog always renders detail preview beside the app sidebar", async () => {
     const fx = catalog()
     process.env.EIKON_URL = fx.base
     await using t = await mount({ width: 180, height: 48 })
     await until(t, () => t.frame().includes("Ready"))
-    await openMarketplaceTab(t)
+    await openCatalogTab(t)
 
     await until(t, () => t.frame().includes("ARES-IDLE") && t.frame().includes("Profile"))
     act(() => t.keys.pressTab())
@@ -530,19 +604,19 @@ describe("EikonMarketplace tab", () => {
     fx.srv.stop()
   })
 
-  test("marketplace row click activates the clicked card without hover", async () => {
+  test("catalog row click activates the clicked card without hover", async () => {
     const fx = catalog()
     process.env.EIKON_URL = fx.base
-    await using t = await mountNode(group(), { width: 160, height: 48 })
-    await until(t, () => t.frame().includes("Catalog (6)") && /▸ .*ares/.test(t.frame()))
+    await using t = await mountNode(group(), { width: 220, height: 48 })
+    await until(t, () => t.frame().includes("Catalog (6)") && t.frame().includes("MONO-POSTER"))
 
     const pos = () => {
       const lines = t.frame().split("\n")
-      const y = lines.findIndex(l => l.includes("mono"))
-      return { x: Math.max(0, lines[y]?.indexOf("mono") ?? 0), y }
+      const y = lines.findIndex(l => l.includes("MONO-POSTER"))
+      return { x: Math.max(0, lines[y]?.indexOf("MONO-POSTER") ?? 0), y }
     }
     await act(async () => { const p = pos(); await t.mouse.click(p.x, p.y) })
-    await until(t, () => t.frame().includes("Eikon only") && /▸ .*mono/.test(t.frame()))
+    await until(t, () => t.frame().includes("Install") && t.frame().includes("Details — mono"))
     expect(eikon.list().some(x => x.name === "ares")).toBe(false)
     expect(eikon.list().some(x => x.name === "mono")).toBe(false)
     fx.srv.stop()

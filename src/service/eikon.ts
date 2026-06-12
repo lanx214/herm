@@ -16,7 +16,7 @@
 // (scope-tracked — deactivate unregisters). Studio reads the registry
 // live on every open of the rasterizer picker.
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, writeFileSync, rmSync, statSync, renameSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, writeFileSync, rmSync, statSync, renameSync, lstatSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { join, extname, basename, dirname } from "node:path"
 import { canonicalSignal, defaultSignalMappings, header as peekHeader, type LaunchStreamRecord, type SourceKind } from "eikon"
@@ -260,6 +260,10 @@ export function list(): Installed[] {
     })
 }
 
+function safeName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(name) && !name.startsWith(".")
+}
+
 /** Folder names under eikons/ regardless of whether they've been
  *  saved yet — used by the Open picker so a fresh `ensure()`d draft
  *  (which `list()` skips until it has a .eikon) is still reachable. */
@@ -267,7 +271,16 @@ export function raw(): string[] {
   const root = ROOT()
   if (!existsSync(root)) return []
   return readdirSync(root, { withFileTypes: true })
-    .filter(e => e.isDirectory()).map(e => e.name)
+    .filter(e => e.isDirectory() && safeName(e.name)).map(e => e.name)
+}
+
+function studioOk(name: string): boolean {
+  if (!existsSync(studioFile(name))) return false
+  try { return readStudio(name) !== undefined } catch { return false }
+}
+
+export function drafts(): string[] {
+  return raw().filter(name => !existsSync(file(name)) && (studioOk(name) || sourceFiles(name).length > 0))
 }
 
 const IMG = /\.(png|jpe?g|webp|gif|bmp)$/i
@@ -365,7 +378,7 @@ export type SourceStatus = {
   sourceUrl?: string
 }
 
-function fileOk(name: string): boolean {
+export function sourceOk(name: string): boolean {
   return IMG.test(name) || VID.test(name)
 }
 
@@ -385,8 +398,13 @@ function storedName(value: string): string {
 
 function sourceFiles(name: string) {
   const src = sourceDir(name)
-  if (!existsSync(src)) return []
-  return readdirSync(src).filter(fileOk)
+  try {
+    const st = lstatSync(src)
+    if (!st.isDirectory() || st.isSymbolicLink()) return []
+  } catch { return [] }
+  return readdirSync(src, { withFileTypes: true })
+    .filter(e => e.isFile() && !e.name.startsWith(".") && sourceOk(e.name))
+    .map(e => e.name)
 }
 
 function byRole(files: string[], role: SourceRole): string | undefined {
@@ -447,7 +465,7 @@ export function sourceStatus(name: string, state?: AvatarState, opts: { sources?
     const value = seed?.[role]
     if (typeof value === "string" && value) {
       const path = sourcePath(name, value)
-      if (existsSync(path) && fileOk(path)) return { path, file: storedName(value), role, origin: opts.sources ? "draft" : "studio" }
+      if (existsSync(path) && sourceOk(path)) return { path, file: storedName(value), role, origin: opts.sources ? "draft" : "studio" }
     }
     const file = byRole(visible, role)
     return file ? { path: join(sourceDir(name), file), file, role, origin: "discovered" } : undefined
@@ -487,7 +505,7 @@ export function localSources(name: string): Array<{ role?: SourceRole; file: str
 export function hasLocalSource(name: string): boolean {
   if (sourceFiles(name).length > 0) return true
   return Object.values(readStudio(name)?.sources ?? {}).some(value =>
-    typeof value === "string" && fileOk(value) && existsSync(sourcePath(name, value)))
+    typeof value === "string" && sourceOk(value) && existsSync(sourcePath(name, value)))
 }
 
 export function sourceStamp(name: string): string {
@@ -775,7 +793,7 @@ export async function inspectSource(src: string): Promise<InspectInfo> {
 /** Install an eikon from any resolvable source (catalog name, git
  *  URL, local dir, http manifest base) into <profile>/eikons/<name>/.
  *  Seeds studio.json from the returned sources map and bumps the
- *  revision counter so the sidebar + Gallery reload. */
+ *  revision counter so the sidebar + Library reload. */
 export function attachSources(name: string, sources: Sources) {
   const prev = readStudio(name)
   writeStudio(name, { ...(prev ?? toStudio(fresh(name, pick()))), sources: { ...prev?.sources, ...sources } })
@@ -828,7 +846,7 @@ export async function downloadSource(name: string, opts: { downloader?: Download
   const pairs = await Promise.all(xs.map(async ([role, rel]) => {
     const file = specOf(man, rel)
     const fname = sourceName(man as SourceManifest, role, rel)
-    if (!fileOk(fname)) throw new Error(`source media type unsupported: ${rel}`)
+    if (!sourceOk(fname)) throw new Error(`source media type unsupported: ${rel}`)
     return [role, fname, await readSource(file, root, rel, dl)] as const
   }))
   const sources: Sources = {}
@@ -969,7 +987,7 @@ async function loadJson(url: string, fetcher: typeof fetch = fetch): Promise<unk
   return JSON.parse(await loadText(url, fetcher))
 }
 
-export async function loadCatalog(index = process.env.HERM_EIKON_MARKETPLACE || DEFAULT_PUBLIC_CATALOG, fetcher: typeof fetch = fetch): Promise<CatalogPackage[]> {
+export async function loadCatalog(index = process.env.HERM_EIKON_CATALOG || DEFAULT_PUBLIC_CATALOG, fetcher: typeof fetch = fetch): Promise<CatalogPackage[]> {
   const url = index.endsWith("index.json") ? index : `${index.replace(/\/$/, "")}/index.json`
   const raw = await loadJson(url, fetcher)
   if (!Array.isArray(raw)) throw pkgErr("catalog", "index array required")

@@ -1,6 +1,6 @@
 import { resolve as resolveSource, type Resolved } from "eikon/install"
 import * as svc from "../service/eikon"
-import * as market from "../service/eikon-marketplace"
+import * as catalog from "../service/eikon-catalog"
 import * as prefs from "../context/preferences"
 
 export const EIKON_CLI_USAGE = `\
@@ -104,7 +104,7 @@ function inspectFromResolved(source: string, r: Resolved): InspectResult {
   }
 }
 
-function searchRow(row: market.MarketplaceRow): SearchRow {
+function searchRow(row: catalog.CatalogRow): SearchRow {
   const lifecycle = row.lifecycle
   return {
     name: row.entry.name,
@@ -123,8 +123,8 @@ const defaultDeps = (): EikonCliDeps => ({
   fetchSource: svc.fetchSource,
   peekSource: svc.peekSource,
   search: async query => {
-    const state = await market.load({ query })
-    if (state.status === "error") throw new Error(state.error ?? "marketplace failed")
+    const state = await catalog.load({ query })
+    if (state.status === "error") throw new Error(state.error ?? "catalog failed")
     return state.rows.map(searchRow)
   },
   inspect: async source => inspectFromResolved(source, await resolveSource(source)),

@@ -17,17 +17,17 @@ You do **not** write `.eikon` or `studio.json`. Studio does.
 
 ## Where the user does the work
 
-Herm's built-in **Eikon** tab (Gallery / Studio / Marketplace). Tell the user:
+Herm's built-in **Eikon** tab (Library / Studio / Catalog). Tell the user:
 "open the Eikon tab" or "Ctrl+K → Eikon". In Studio:
 
-- `eikon` row → pick / New…
+- `eikon` row → pick an existing local Eikon
 - `source` row → Local file… / Generate image… / Generate video…
 - `input` section → contrast / invert / flip (pixel-domain, shared)
 - `<rasterizer>` section → symbols / fill / dither (glyph-domain)
 - Preview pane → wheel pans, Ctrl+wheel zooms, Shift+wheel pans X
 - **Ctrl+S** bakes all six states without changing the active avatar
 - **Ctrl+U** bakes all six states and uses it as the active avatar
-- `u` from Studio or `s` from Gallery opens the official-registry submit flow
+- Studio/Library `share` opens the official-registry submit flow
 
 ## What makes a good source
 
@@ -42,18 +42,18 @@ everything.
 | "make me an eikon of X" | Load `eikon-create` and follow it. |
 | drops an image path | `cp` it to `~/.hermes/eikons/<name>/source/base.<ext>` → "Eikon tab, pick <name>". |
 | "edit my <name> eikon" | "Eikon tab → `eikon` row → <name>." |
-| "install/shared marketplace eikon" | "Eikon tab → Marketplace", or `/marketplace`. Install, then Use when ready. |
-| "install from GitHub" | "Eikon tab → New… → inspect/install", or `herm eikon install github.com/user/repo/eikon-name`. |
+| "install/shared catalog eikon" | "Eikon tab → Catalog", or `/catalog`. Install, then Use when ready. |
+| "install from GitHub" | `herm eikon install github.com/user/repo/eikon-name` (CLI/docs path). |
 | "too dark / washed out" | "invert toggle, then contrast slider — under `input`." |
 | "off-center / too small" | "Ctrl+wheel to zoom, wheel/drag to pan on the preview." |
 | "make it move" | `eikon-create` §5 (video), or Studio's `source` → Generate video…. |
-| "publish/share my eikon" | "Eikon tab → Studio/Gallery → submit. Review the bundle, metadata, and GitHub PR target before continuing." |
+| "publish/share my eikon" | "Eikon tab → Studio/Library → share. Review the bundle, metadata, and GitHub PR target before continuing." |
 
 ## Install and manage shared eikons
 
-For catalog eikons, use **Eikon → Marketplace**. Rows show source,
+For catalog eikons, use **Eikon → Catalog**. Rows show source,
 compatibility, and trust (`Verified`, `Unverified`, or `Mismatch`).
-Marketplace installs fetch built package artifacts and do not clone creator
+Catalog installs fetch built package artifacts and do not clone creator
 repos.
 
 For direct sharing, use `github.com/user/repo/eikon-name` for a multi-eikon
@@ -77,12 +77,12 @@ eikon requires explicit acknowledgement because it changes or clears the active
 avatar.
 
 Creators share through normal GitHub repositories. For official registry
-listing, use Gallery/Studio submit after baking: Herm previews the public
+listing, use Library/Studio share after baking: Herm previews the public
 bundle, asks for title/author/description/glyph, and creates or guides a
 GitHub PR to the shared registry. Use upstream `eikon pack`, `eikon index`,
 and `eikon manifest` for direct-install repos. `eikon publish` is the lower-
 level GitHub PR contribution helper for the configured/default catalog repo,
-not a hosted marketplace account or upload flow.
+not a hosted catalog account or upload flow.
 
 ## Quick poster
 

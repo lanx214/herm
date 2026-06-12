@@ -98,11 +98,12 @@ discover, inspect, install, use, update, and remove.
 
 In Herm:
 
-- Open Eikon → Marketplace, or run `/marketplace`, to browse shared catalog
+- Open Eikon → Catalog, or run `/catalog`, to browse shared catalog
   entries.
 - Preview rows before installing. Trust is shown as `Verified`, `Unverified`,
   or `Mismatch` beside source and compatibility state.
-- Install adds the eikon to your local library without activating it.
+- Catalog install adds the eikon to your local library, then asks whether to
+  use it now. You can remember that Catalog-only activation decision.
 - Use selects an installed eikon as the active avatar.
 - Update or remove an active eikon only after confirming that the active
   avatar's backing package will change or be cleared.
@@ -122,26 +123,26 @@ herm eikon remove <name> --active-ok
 `install` never activates. `use` is the activation action. JSON output is
 available for automation with `--json`.
 
-Default Marketplace installs fetch built package artifacts referenced by the
+Default Catalog installs fetch built package artifacts referenced by the
 catalog, not creator repositories. Direct GitHub installs are for sharing
 outside the default catalog and support both single-package repos and
 multi-eikon catalog repos addressed as `github.com/user/repo/eikon-name`.
 Private GitHub repos use normal git authentication.
 
 Creators can share Eikons through normal GitHub repositories. For official
-registry listing, use Eikon → Studio/Gallery → submit after baking. Herm previews
+registry listing, use Eikon → Studio/Library → Share after baking. Herm previews
 the exact public bundle, asks for title/author/description/glyph, and either
 creates a GitHub PR through local `gh` auth or gives a browser/manual PR
 fallback with copyable bundle and PR text. Direct-install repos can still be
 prepared with upstream `eikon pack`, `eikon index`, and `eikon manifest`.
 `eikon publish` remains the lower-level GitHub PR contribution helper for the
-configured/default catalog repo; it is not a hosted marketplace account, upload,
+configured/default catalog repo; it is not a hosted catalog account, upload,
 dashboard, or moderation flow.
 
-Use `eikon.liftaris.dev` as a discovery gallery only; it previews catalog
+Use `eikon.liftaris.dev` as a discovery library only; it previews catalog
 entries and gives copyable Herm install instructions.
 
-Herm owns native Marketplace behavior. The eikon repo owns the registry,
+Herm owns native Catalog behavior. The eikon repo owns the registry,
 browser mirror, shared catalog/player exports, install resolver, and publish
 preflight. Herm imports public eikon package exports rather than browser mirror
 internals or unexported source paths.
