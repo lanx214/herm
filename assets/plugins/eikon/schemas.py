@@ -47,7 +47,7 @@ EIKON_INSTALL_SCHEMA = {
 
 EIKON_SEARCH_SCHEMA = {
     "name": "eikon_search",
-    "description": "Search the Herm eikon marketplace/catalog via `herm eikon search --json`.",
+    "description": "Search the Herm eikon catalog via `herm eikon search --json`.",
     "parameters": {
         "type": "object",
         "properties": {

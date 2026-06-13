@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { basename, dirname, extname, join } from "node:path"
-import { downloadBytes, entries as packageEntries, type Catalog, type PublicCatalogEntry as CatalogEntry, type CatalogOptions, type DownloadOptions } from "eikon"
+import { downloadBytes, entries as packageEntries, type Catalog, type PublicCatalogEntry as CatalogEntry, type CatalogOptions as LoadOptions, type DownloadOptions } from "eikon"
 import { loadCatalog, loadRuntimeArtifact, publicCatalogUrl, searchCatalog } from "eikon/catalog"
 import { eikon } from "./eikon"
+import { STATES } from "../utils/eikon-knobs"
 import * as prefs from "../context/preferences"
 import { listEikons } from "../components/avatar/eikon"
 import { BUNDLED_EIKON_DIR } from "../components/avatar/bundled"
@@ -27,7 +28,7 @@ export type InstalledMetadata = eikon.Installed & {
   identityKeys: string[]
 }
 
-export type MarketplaceRow = {
+export type CatalogRow = {
   entry: CatalogEntry
   installed: boolean
   active: boolean
@@ -48,27 +49,29 @@ export type MarketplaceRow = {
   action: "install" | "use" | "active" | "retry"
 }
 
-export type MarketplaceState = {
+export type CatalogState = {
   status: LoadStatus
   query: string
-  rows: MarketplaceRow[]
-  selected?: MarketplaceRow
+  rows: CatalogRow[]
+  selected?: CatalogRow
   error?: string
-  service?: MarketplaceService
+  service?: CatalogService
 }
 
-export type MarketplaceOptions = CatalogOptions & {
+export type CatalogOptions = LoadOptions & {
   catalog?: string
   fetcher?: Fetcher
   query?: string
+  mode?: "ui" | "cli"
+  hideInstalled?: boolean
   timeoutMs?: number
   previewCacheLimit?: number
   concurrency?: number
 }
 
 type PreviewOptions = { signal?: AbortSignal; timeoutMs?: number }
-export type MarketplaceInstall = { name: string; n: number; bytes: number }
-export type MarketplaceSizes = { eikon?: number; source?: number }
+export type CatalogInstall = { name: string; n: number; bytes: number }
+export type CatalogSizes = { eikon?: number; source?: number }
 
 type Job<T> = {
   run: () => Promise<T>
@@ -243,11 +246,16 @@ function rawManifest(entry: CatalogEntry): SourceManifest | undefined {
   return obj(raw.manifest) ? raw.manifest as SourceManifest : undefined
 }
 
+function slot(value: string): SourceRole | undefined {
+  if (value === "base") return "base"
+  return (STATES as readonly string[]).includes(value) ? value as SourceRole : undefined
+}
+
 function role(file: PackageFile): SourceRole | undefined {
   if (file.role === "source.base") return "base"
-  if (file.role?.startsWith("source.")) return file.role.slice("source.".length) as SourceRole
+  if (file.role?.startsWith("source.")) return slot(file.role.slice("source.".length))
   if (!file.path) return undefined
-  return (basename(file.path, extname(file.path)).toLowerCase() || "base") as SourceRole
+  return slot(basename(file.path, extname(file.path)).toLowerCase() || "base")
 }
 
 function sourceEntries(man: SourceManifest | undefined, strict = false): Array<[SourceRole, string]> {
@@ -332,7 +340,7 @@ function match(entry: CatalogEntry, xs: InstalledMetadata[]) {
   return undefined
 }
 
-function row(entry: CatalogEntry, xs: InstalledMetadata[]): MarketplaceRow {
+function row(entry: CatalogEntry, xs: InstalledMetadata[]): CatalogRow {
   const usable = match(entry, xs)
   const active = usable ? chosen(prefs.get("eikon"), usable.inst.name) : false
   const installed = Boolean(usable)
@@ -377,7 +385,23 @@ function row(entry: CatalogEntry, xs: InstalledMetadata[]): MarketplaceRow {
   }
 }
 
-function sizes(man: SizedPackage): MarketplaceSizes {
+
+function terms(query: string) {
+  return query.toLowerCase().trim().split(/\s+/).filter(Boolean)
+}
+
+function uiEntries(entries: CatalogEntry[], query: string) {
+  const xs = terms(query)
+  if (xs.length === 0) return entries
+  return entries.filter(entry => xs.every(term => [entry.name, entry.title, entry.author]
+    .some(value => typeof value === "string" && value.toLowerCase().includes(term))))
+}
+
+function visibleRows(rows: CatalogRow[], hide = false) {
+  return hide ? rows.filter(row => !row.installed || row.installState === "legacy-name-match") : rows
+}
+
+function sizes(man: SizedPackage): CatalogSizes {
   const files = Array.isArray(man.files) ? man.files : []
   const eikon = files
     .filter(f => f.role === "runtime" || f.path === man.entrypoints?.default)
@@ -399,7 +423,7 @@ function abortErr() {
   return new DOMException("aborted", "AbortError")
 }
 
-export class MarketplaceService {
+export class CatalogService {
   private catalog: Catalog
   private fetcher: Fetcher
   private timeoutMs: number
@@ -411,7 +435,7 @@ export class MarketplaceService {
   private cache = new Map<string, string>()
   private inFlight = new Map<string, Promise<string>>()
 
-  constructor(catalog: Catalog, opts: MarketplaceOptions = {}) {
+  constructor(catalog: Catalog, opts: CatalogOptions = {}) {
     this.catalog = catalog
     this.fetcher = opts.fetcher ?? fetch
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT
@@ -420,10 +444,10 @@ export class MarketplaceService {
     this.allowPrivate = opts.allowPrivate === true
   }
 
-  rows(query = ""): MarketplaceRow[] {
-    const entries = searchCatalog(this.catalog.entries, query)
+  rows(query = "", opts: { mode?: "ui" | "cli"; hideInstalled?: boolean } = {}): CatalogRow[] {
+    const entries = opts.mode === "ui" ? uiEntries(this.catalog.entries, query) : searchCatalog(this.catalog.entries, query)
     const xs = installed()
-    return entries.map(e => row(e, xs))
+    return visibleRows(entries.map(e => row(e, xs)), opts.hideInstalled)
   }
 
   entry(id: string): CatalogEntry | undefined {
@@ -456,7 +480,7 @@ export class MarketplaceService {
   async preview(id: string, opts: PreviewOptions = {}): Promise<string> {
     if (opts.signal?.aborted) throw abortErr()
     const entry = this.entry(id)
-    if (!entry) throw new Error(`marketplace: unknown eikon "${id}"`)
+    if (!entry) throw new Error(`catalog: unknown eikon "${id}"`)
     const key = cacheKey(entry)
     const hit = this.cache.get(key)
     if (hit !== undefined) return hit
@@ -467,15 +491,15 @@ export class MarketplaceService {
     return p
   }
 
-  async packageSizes(id: string): Promise<MarketplaceSizes> {
+  async packageSizes(id: string): Promise<CatalogSizes> {
     const entry = this.entry(id)
-    if (!entry) throw new Error(`marketplace: unknown eikon "${id}"`)
+    if (!entry) throw new Error(`catalog: unknown eikon "${id}"`)
     return sizes(JSON.parse(dec.decode(await downloadBytes(entry.packageUrl, this.dl()))) as SizedPackage)
   }
 
-  async install(id: string, opts: { media?: boolean; confirmActive?: boolean } = {}): Promise<MarketplaceInstall> {
+  async install(id: string, opts: { media?: boolean; confirmActive?: boolean } = {}): Promise<CatalogInstall> {
     const entry = this.entry(id)
-    if (!entry) throw new Error(`marketplace: unknown eikon "${id}"`)
+    if (!entry) throw new Error(`catalog: unknown eikon "${id}"`)
     if (entry.compatibility?.available === false) throw new Error(entry.compatibility.reason ?? "eikon is incompatible")
     if (!match(entry, installed()) && chosen(prefs.get("eikon"), entry.name) && !opts.confirmActive) throw new Error(`Installing '${entry.name}' will replace the active avatar's backing package. Pass confirmActive to install it.`)
     const raw = await downloadBytes(entry.packageUrl, this.dl())
@@ -494,22 +518,24 @@ export class MarketplaceService {
     return out
   }
 
-  async downloadSource(id: string): Promise<MarketplaceInstall> {
+  async downloadSource(id: string): Promise<CatalogInstall> {
     const entry = this.entry(id)
-    if (!entry) throw new Error(`marketplace: unknown eikon "${id}"`)
+    if (!entry) throw new Error(`catalog: unknown eikon "${id}"`)
     const usable = match(entry, installed())
-    if (!usable) throw new Error(`marketplace: "${entry.name}" is not installed`)
-    if (!sourceAvailable(entry, usable.inst)) throw new Error(`marketplace: no source media published for "${entry.name}"`)
+    if (!usable) throw new Error(`catalog: "${entry.name}" is not installed`)
+    if (!sourceAvailable(entry, usable.inst)) throw new Error(`catalog: no source media published for "${entry.name}"`)
     const raw = await downloadBytes(entry.packageUrl, this.dl())
     boundTrust(entry, raw)
     const man = JSON.parse(dec.decode(raw)) as SourceManifest
     const xs = sourceEntries(man, true)
-    if (xs.length === 0) throw new Error(`marketplace: no source media published for "${entry.name}"`)
+    if (xs.length === 0) throw new Error(`catalog: no source media published for "${entry.name}"`)
     const base = new URL(".", entry.packageUrl).href
     const dir = eikon.ensure(usable.inst.name).source
     const pairs = await Promise.all(xs.map(async ([r, rel]) => {
+      const fname = eikon.sourceName(man, r, rel)
+      if (!eikon.sourceOk(fname)) throw new Error(`source media type unsupported: ${rel}`)
       const data = await sourceBytes(man, base, rel, this.dl())
-      return [r, eikon.sourceName(man, r, rel), data] as const
+      return [r, fname, data] as const
     }))
     const sources: eikon.Sources = {}
     await Promise.all(pairs.map(async ([r, fname, data]) => {
@@ -558,15 +584,17 @@ export class MarketplaceService {
   }
 }
 
-export async function load(opts: MarketplaceOptions = {}): Promise<MarketplaceState> {
+export async function load(opts: CatalogOptions = {}): Promise<CatalogState> {
   const query = opts.query ?? ""
   try {
     if (opts.catalog) publicCatalogUrl(opts.catalog, undefined, opts)
     const cat = await loadCatalog(opts.catalog, opts.fetcher ?? fetch, opts)
-    const service = new MarketplaceService(cat, opts)
-    const rows = service.rows(query)
+    const service = new CatalogService(cat, opts)
+    const rows = service.rows(query, { mode: opts.mode, hideInstalled: opts.hideInstalled })
     return { status: rows.length > 0 ? "ready" : "empty", query, rows, selected: rows[0], service }
   } catch (err) {
     return { status: "error", query, rows: [], error: err instanceof Error ? err.message : String(err) }
   }
 }
+
+export * as cat from "./eikon-catalog"

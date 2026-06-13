@@ -19,6 +19,7 @@ import { copySelection, copy as clipCopy } from "./utils/clipboard"
 import { ThemeProvider, useTheme } from "./theme"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
+import { DialogSelect } from "./ui/dialog-select"
 import { CommandProvider } from "./ui/command"
 import { KeysProvider } from "./keys"
 import { Splash } from "./ui/Splash"
@@ -642,6 +643,41 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     void switchSession(splashLast.id)
     return true
   }, [splash, splashLast, composing, switchSession])
+  const createEikon = useCallback(() => {
+    const cmd = "/eikon-create"
+    const start = async (fresh: boolean) => {
+      setSplash(false)
+      goToTab(CHAT_TAB)
+      setFocusRegion("input")
+      if (fresh) {
+        await newSession()
+        composer.current?.set("")
+        sendRef.current(cmd)
+        return
+      }
+      const c = composer.current
+      const v = c?.value() ?? ""
+      if (turnRef.current.streaming || v.trim()) {
+        if (c) c.set(v.trim() ? `${v}${v.endsWith("\n") ? "" : "\n"}${cmd}` : cmd)
+        toast.show({ variant: "info", message: "Prepared /eikon-create in Chat" })
+        return
+      }
+      sendRef.current(cmd)
+    }
+    const real = turnRef.current.messages.some(m => m.role === "user" || m.role === "assistant")
+    const active = sidRef.current && (real || titleRef.current.trim() || composer.current?.value().trim())
+    if (!active) return void start(false)
+    dialog.replace(
+      <DialogSelect title="Where would you like to create your Eikon?" filterable={false}
+        options={[
+          { title: `Active session (${titleRef.current.trim() || sidRef.current})`, value: "active" },
+          { title: "New session", value: "new" },
+        ]}
+        onSelect={o => { dialog.clear(); void start(o.value === "new") }} />,
+      () => {},
+    )
+  }, [dialog, goToTab, newSession, toast])
+
   // Purely client-side: prompts typed while streaming accumulate in
   // `queue`; on idle the head auto-submits. turnReducer doesn't flip
   // `streaming` until the gateway emits message.start (async), so a
@@ -795,7 +831,8 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
                                              setSub={cfgSub} />
         case EIKON_TAB: return <EikonGroup focused={contentFocused}
                                            sub={subTabs[EIKON_TAB] ?? 0}
-                                           setSub={eikSub} />
+                                           setSub={eikSub}
+                                           onCreate={createEikon} />
         default: {
           const r = extra[tab - TABS.length]
           return r ? r.render() : null

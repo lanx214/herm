@@ -2,13 +2,14 @@ import { memo, useCallback, useEffect, useState, type ReactNode } from "react"
 import { SubTabBar } from "../components/tabs/SubTabBar"
 import { SUB_TABS, EIKON_TAB } from "../app/tabs"
 import { EikonStudio } from "./EikonStudio"
-import { EikonGallery } from "./EikonGallery"
-import { EikonMarketplace } from "./EikonMarketplace"
+import { EikonLibrary } from "./EikonLibrary"
+import { EikonCatalog } from "./EikonCatalog"
 
 type Props = {
   focused?: boolean
   sub: number
   setSub: (i: number) => void
+  onCreate?: () => void
 }
 
 export const EikonGroup = memo((props: Props) => {
@@ -22,10 +23,10 @@ export const EikonGroup = memo((props: Props) => {
       <SubTabBar tabs={labels} active={props.sub} onChange={props.setSub} hint={hint} />
       <box flexGrow={1} minWidth={0} minHeight={0} flexDirection="column">
         <Pane visible={props.sub === 0}>
-          <EikonGallery focused={!!props.focused && props.sub === 0} onEdit={edit} />
+          <EikonLibrary focused={!!props.focused && props.sub === 0} onEdit={edit} onCreate={props.onCreate} />
         </Pane>
         <Pane visible={props.sub === 1}>
-          <EikonMarketplace focused={!!props.focused && props.sub === 1} />
+          <EikonCatalog focused={!!props.focused && props.sub === 1} />
         </Pane>
         <Pane visible={props.sub === 2}>
           <EikonStudio focused={!!props.focused && props.sub === 2} name={target} />

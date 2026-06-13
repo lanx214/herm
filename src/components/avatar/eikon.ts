@@ -1,6 +1,6 @@
 // Shim over the `eikon` package so existing herm imports keep their
 // names while the format logic lives upstream. Herm-specific shapes
-// (EikonMeta.states) are preserved for AnimatedAvatar/Gallery.
+// (EikonMeta.states) are preserved for AnimatedAvatar/Library.
 
 import { readdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"

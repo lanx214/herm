@@ -10,7 +10,6 @@ import { useKeys, handleListKey, useFollow } from "../keys"
 import { EikonCardGrid, EikonTitleList, type EikonCard } from "./eikon-panels"
 import { openConfirm } from "../dialogs/confirm"
 import { openEikonSubmit } from "../dialogs/eikon-submit"
-import { openNewEikon } from "../dialogs/new-eikon"
 import * as submitSvc from "../service/eikon-submit"
 import { useKeyboard } from "@opentui/react"
 import { AnimatedAvatar } from "../components/avatar/AnimatedAvatar"
@@ -25,11 +24,13 @@ type Row = {
   w: number; h: number; url?: string; hasSource: boolean
   lifecycle?: eikon.LifecycleInfo
   manifest?: Record<string, unknown>
+  draft?: boolean
 }
 
 type Props = {
   focused: boolean
   onEdit?: (name: string) => void
+  onCreate?: () => void
   submit?: submitSvc.Submit
 }
 
@@ -37,7 +38,7 @@ type Pane = "list" | "actions"
 type Action = { key: string; label: string; run: () => void; danger?: boolean }
 const PREVIEW = 54
 
-export const EikonGallery = memo((props: Props) => {
+export const EikonLibrary = memo((props: Props) => {
   const theme = useTheme().theme
   const dialog = useDialog()
   const toast = useToast()
@@ -49,7 +50,7 @@ export const EikonGallery = memo((props: Props) => {
     const own = eikon.list()
     const map = new Map(own.map(x => [x.name.toLowerCase(), x]))
     const meta = own.map(x => ({ inst: x, ids: ids(x.manifest as Record<string, unknown> | undefined, x.name, x.sourceUrl) }))
-    return listEikons([BUNDLED_EIKON_DIR, user]).map(e => {
+    const baked = listEikons([BUNDLED_EIKON_DIR, user]).map(e => {
       const slug = e.path.startsWith(BUNDLED_EIKON_DIR)
         ? e.meta.name.toLowerCase() : basename(dirname(e.path))
       const man = manifest(dirname(e.path))
@@ -65,6 +66,12 @@ export const EikonGallery = memo((props: Props) => {
         ...(man ? { manifest: man } : {}),
       }
     }).filter(r => !(r.bundled && r.lifecycle))
+    const seen = new Set(baked.map(r => r.slug))
+    const drafts = eikon.drafts().filter(name => !seen.has(name)).map(name => ({
+      path: eikon.file(name), name, slug: name, bundled: false, w: 48, h: 24,
+      hasSource: true, draft: true,
+    }))
+    return [...baked, ...drafts]
   }, [rev])
 
   const active = prefs.usePref("eikon")
@@ -73,47 +80,32 @@ export const EikonGallery = memo((props: Props) => {
   const [sel, setSel] = useState(0)
   const [pane, setPane] = useState<Pane>("list")
   const [act, setAct] = useState(0)
-  const galleryFollow = useFollow("gal", i => rows[i]?.slug ?? i)
-  const gridFollow = useFollow("lib-grid", i => rows[i]?.slug ?? i)
+  const list = useFollow("library", i => rows[i]?.slug ?? i)
+  const grid = useFollow("library-grid", i => rows[i]?.slug ?? i)
 
   useEffect(() => { if (sel >= rows.length) setSel(Math.max(0, rows.length - 1)) }, [rows.length, sel])
 
   const cur = rows[sel]
   const parsed = useMemo<ParsedEikon | undefined>(() => {
-    if (!cur) return undefined
+    if (!cur || cur.draft) return undefined
     try { return parseEikonFile(cur.path) } catch { return undefined }
   }, [cur])
 
   const activate = (row = cur) => {
     if (!row) return
+    if (row.draft) return props.onEdit?.(row.slug)
     if (row.bundled) prefs.set("eikon", row.slug)
     else eikon.useInstalled(row.slug)
     toast.show({ variant: "success", message: `Avatar → ${row.name}` })
   }
 
-  const doNew = useCallback(async () => {
-    const res = await openNewEikon(dialog, {})
-    if (!res) return
-    if (res.from === "blank") {
-      eikon.ensure(res.name)
-      return props.onEdit?.(res.name)
-    }
-    if (res.from === "file") {
-      eikon.ensure(res.name)
-      try { eikon.adopt(res.name, res.file, "base") }
-      catch (e) { return toast.error(e instanceof Error ? e : new Error(String(e))) }
-      return props.onEdit?.(res.name)
-    }
-    toast.show({ variant: "info", message: `Installing '${res.name}' from ${res.src}…` })
-    await eikon.installPackage(res.src, { name: res.name })
-      .then(out => {
-        toast.show({ variant: "success", message: `Installed '${out.name}' (${out.n} files)` })
-      })
-      .catch(e => toast.error(e instanceof Error ? e : new Error(String(e))))
-  }, [dialog, toast, props])
+  const doNew = useCallback(() => {
+    if (props.onCreate) return props.onCreate()
+    toast.show({ variant: "warning", message: "Open Chat and run /eikon-create" })
+  }, [props, toast])
 
   const updateLocal = useCallback(async () => {
-    if (!cur || cur.bundled) return
+    if (!cur || cur.bundled || cur.draft) return
     try {
       const out = await eikon.update(cur.slug)
       if ("type" in out) {
@@ -133,7 +125,7 @@ export const EikonGallery = memo((props: Props) => {
   }, [cur, dialog, toast])
 
   const submitLocal = useCallback(async () => {
-    if (!cur || cur.bundled) return
+    if (!cur || cur.bundled || cur.draft) return
     const path = submitSvc.submitPath(cur.slug)
     const pub = submitSvc.publishedInfo(path)
     if (pub) {
@@ -150,9 +142,11 @@ export const EikonGallery = memo((props: Props) => {
   const del = async () => {
     if (!cur || cur.bundled) return
     const here = current(cur)
-    const body = here
-      ? `Removes ${dirname(cur.path)} and all its sources. This is the active avatar; deleting it will clear the active avatar selection.`
-      : `Removes ${dirname(cur.path)} and all its sources.`
+    const body = cur.draft
+      ? `Removes ${dirname(cur.path)} and all its sources.`
+      : here
+        ? `Removes ${dirname(cur.path)} and all its sources. This is the active avatar; deleting it will clear the active avatar selection.`
+        : `Removes ${dirname(cur.path)} and all its sources.`
     const ok = await openConfirm(dialog, {
       title: `Delete '${cur.name}'?`, danger: true,
       body,
@@ -165,6 +159,10 @@ export const EikonGallery = memo((props: Props) => {
 
   const actions = useMemo<Action[]>(() => {
     if (!cur) return []
+    if (cur.draft) return [
+      { key: "Enter", label: "Open in Studio", run: () => props.onEdit?.(cur.slug) },
+      { key: "d", label: "Delete draft", run: () => void del(), danger: true },
+    ]
     return [
       { key: "Enter", label: current(cur) ? "Use as active avatar (active)" : "Use as active avatar", run: () => activate() },
       ...(props.onEdit ? [{ key: "e", label: "Edit in Studio", run: () => props.onEdit?.(cur.slug) } satisfies Action] : []),
@@ -179,14 +177,14 @@ export const EikonGallery = memo((props: Props) => {
   useEffect(() => { if (act >= actions.length) setAct(Math.max(0, actions.length - 1)) }, [act, actions.length])
 
   const cards = useMemo<EikonCard[]>(() => rows.map(r => {
-    const p = (() => { try { return parseEikonFile(r.path) } catch { return undefined } })()
-    const lines = p?.resolve("state.idle")?.frames[0] ?? p?.states.get("idle")?.frames[0] ?? ["(no preview)"]
+    const p = (() => { try { return r.draft ? undefined : parseEikonFile(r.path) } catch { return undefined } })()
+    const lines = p?.resolve("state.idle")?.frames[0] ?? p?.states.get("idle")?.frames[0] ?? [r.draft ? "(source draft)" : "(no preview)"]
     return {
       key: r.path,
       name: r.name,
       active: current(r),
       author: r.author,
-      status: current(r) ? "active" : r.bundled ? "bundled/system" : "installed",
+      status: r.draft ? "draft/source" : current(r) ? "active" : r.bundled ? "bundled/system" : "installed",
       lines,
     }
   }), [rows, path])
@@ -205,15 +203,15 @@ export const EikonGallery = memo((props: Props) => {
     if (handleListKey(keys, key, {
       count: rows.length,
       setSel,
-      page: galleryFollow.opts.page,
-      scrollTo: n => galleryFollow.ref.current?.scrollChildIntoView(galleryFollow.id(n)),
+      page: list.opts.page,
+      scrollTo: n => list.ref.current?.scrollChildIntoView(list.id(n)),
       onActivate: () => activate(),
       onDelete: () => void del(),
       onNew: doNew,
       onRefresh: () => { eikon.notifyRevision(); toast.show({ variant: "info", message: "Reloaded", duration: 1000 }) },
     })) return
-    if (key.name === "u" && cur && !cur.bundled) return void updateLocal()
-    if (key.name === "s" && cur && !cur.bundled) return void submitLocal()
+    if (key.name === "u" && cur && !cur.bundled && !cur.draft) return void updateLocal()
+    if (key.name === "s" && cur && !cur.bundled && !cur.draft) return void submitLocal()
     if (key.name === "e" && cur && props.onEdit) props.onEdit(cur.slug)
   })
 
@@ -226,10 +224,10 @@ export const EikonGallery = memo((props: Props) => {
     <box flexDirection="column" flexGrow={1} minWidth={0}>
       <box flexDirection="row" flexGrow={1} minHeight={0}>
         <EikonTitleList title={`Library (${rows.length})`} rows={rows.map(r => ({ key: r.path, name: r.name, active: current(r) }))}
-          sel={sel} focus={props.focused && pane === "list"} follow={galleryFollow} width={listW}
+          sel={sel} focus={props.focused && pane === "list"} follow={list} width={listW}
           onSel={setSel} onUse={i => activate(rows[i])} />
         <TabShell title="Grid" grow={1}>
-          <EikonCardGrid rows={cards} sel={sel} follow={gridFollow} onSel={setSel} onUse={i => activate(rows[i])} />
+          <EikonCardGrid rows={cards} sel={sel} follow={grid} onSel={setSel} onUse={i => activate(rows[i])} />
         </TabShell>
         <box width={PREVIEW} flexShrink={0} minHeight={0}>
           <TabShell title={cur ? `Preview — ${cur.name}` : "Preview"} grow={1}>
@@ -237,15 +235,15 @@ export const EikonGallery = memo((props: Props) => {
               <box alignItems="center" justifyContent="center" width={48} height={24} flexShrink={0} overflow="hidden">
                 {parsed
                   ? <AnimatedAvatar key={cur!.path} state="idle" eikon={parsed} />
-                  : <text fg={theme.textMuted}>No preview.</text>}
+                  : <text fg={theme.textMuted}>{cur?.draft ? "Source draft." : "No preview."}</text>}
               </box>
               {cur ? (
                 <box flexDirection="column" width={48}>
                   <text fg={theme.text}><strong>{cur.name}</strong></text>
                   <text fg={theme.textMuted}>Author: {cur.author ?? "—"}</text>
-                  <text fg={theme.textMuted}>Status: {current(cur) ? "active" : cur.bundled ? "bundled/system" : "installed"}</text>
-                  <text fg={theme.textMuted} wrapMode="word">Source: {gallerySource(cur)}</text>
-                  <text fg={theme.textMuted} wrapMode="word">Trust: {galleryTrust(cur)}</text>
+                  <text fg={theme.textMuted}>Status: {cur.draft ? "draft/source" : current(cur) ? "active" : cur.bundled ? "bundled/system" : "installed"}</text>
+                  <text fg={theme.textMuted} wrapMode="word">Source: {librarySource(cur)}</text>
+                  <text fg={theme.textMuted} wrapMode="word">Trust: {libraryTrust(cur)}</text>
                   <text fg={theme.textMuted} wrapMode="word">Package: {packageId(cur)}</text>
                   <text fg={theme.textMuted}>{sourceBadge(cur)}</text>
                   <box height={1} />
@@ -265,15 +263,16 @@ export const EikonGallery = memo((props: Props) => {
       </box>
       <HintBar pairs={[
         ["Tab", pane === "list" ? "actions" : "library"],
-        [keys.print("list.activate"), pane === "actions" ? "run action" : "use"], ["↑↓", pane === "actions" ? "action" : "select"],
-        [keys.print("list.new"), "new / install"], [keys.print("list.refresh"), "reload"],
+        [keys.print("list.activate"), pane === "actions" ? "run action" : cur?.draft ? "edit" : "use"], ["↑↓", pane === "actions" ? "action" : "select"],
+        [keys.print("list.new"), "create in chat"], [keys.print("list.refresh"), "reload"],
         ...(cur && props.onEdit ? [["e", "edit in Studio"] as const] : []),
       ]} />
     </box>
   )
 })
 
-const galleryTrust = (row: Row) => {
+const libraryTrust = (row: Row) => {
+  if (row.draft) return "Draft"
   const t = row.lifecycle?.trust
   if (t === "verified") return "Verified"
   if (t === "mismatch") return "Mismatch"
@@ -281,14 +280,15 @@ const galleryTrust = (row: Row) => {
   return row.bundled ? "Bundled" : "Legacy local"
 }
 
-const gallerySource = (row: Row) => {
+const librarySource = (row: Row) => {
+  if (row.draft) return "local draft"
   const src = row.lifecycle?.source
   if (src) return src.identity ?? src.repo ?? src.origin ?? src.kind
   if (row.bundled) return "bundled/system"
   return "local"
 }
 
-const packageId = (row: Row) => typeof row.manifest?.id === "string" ? row.manifest.id : row.bundled ? "bundled/system" : "—"
+const packageId = (row: Row) => row.draft ? "draft" : typeof row.manifest?.id === "string" ? row.manifest.id : row.bundled ? "bundled/system" : "—"
 
 const manifest = (dir: string) => {
   const file = join(dir, "manifest.json")
@@ -299,7 +299,7 @@ const manifest = (dir: string) => {
   } catch { return undefined }
 }
 
-const sourceBadge = (row: Row) => row.hasSource ? "● source" : row.url || row.bundled ? "○ source available" : "— no source"
+const sourceBadge = (row: Row) => row.draft ? "● source draft" : row.hasSource ? "● source" : row.url || row.bundled ? "○ source available" : "— no source"
 
 const key = (value: string) => {
   try {

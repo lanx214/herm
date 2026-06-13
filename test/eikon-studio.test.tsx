@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { mountNode, until } from "./harness"
 import { EikonGroup } from "../src/tabs/EikonGroup"
-import { EikonGallery } from "../src/tabs/EikonGallery"
+import { EikonLibrary } from "../src/tabs/EikonLibrary"
 import { EikonStudio, resetToolsetsCache } from "../src/tabs/EikonStudio"
 import { gen } from "../src/service/eikon-gen"
 import { eikon } from "../src/service/eikon"
@@ -44,7 +44,7 @@ function seed(name: string, opts: { published?: boolean } = {}) {
 }
 
 describe("EikonStudio tab", () => {
-  run("published marketplace installs cannot submit from Studio", async () => {
+  run("published catalog installs cannot submit from Studio", async () => {
     const un = eikon.register(stub)
     seed("pub", { published: true })
     prefs.set("eikon", "pub")
@@ -54,9 +54,58 @@ describe("EikonStudio tab", () => {
       { width: 160, height: 48 },
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    act(() => t.keys.pressKey("u"))
-    await until(t, () => t.frame().includes("Create a local draft before submitting"))
+    expect(t.frame()).not.toContain("share")
     expect(t.frame()).not.toContain("Submit eikon")
+    un()
+  })
+
+  run("dirty published catalog installs can share as new submissions", async () => {
+    const un = eikon.register(stub)
+    seed("pubdirty", { published: true })
+    prefs.set("eikon", "pubdirty")
+    let sub = 2
+    await using t = await mountNode(
+      <EikonGroup focused sub={sub} setSub={i => { sub = i }} />,
+      { width: 160, height: 48 },
+    )
+    await until(t, () => t.frame().includes("rasterizer"))
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    act(() => t.keys.pressArrow("right"))
+    await until(t, () => t.frame().includes("● unsaved"))
+    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("up")); await t.settle() }
+    await until(t, () => /▸ share/.test(t.frame()))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Save before sharing?"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Submit eikon"))
+    un()
+  })
+
+  run("saved edits to published catalog installs remain shareable", async () => {
+    const un = eikon.register(stub)
+    seed("pubsaved", { published: true })
+    prefs.set("eikon", "pubsaved")
+    let sub = 2
+    await using t = await mountNode(
+      <EikonGroup focused sub={sub} setSub={i => { sub = i }} />,
+      { width: 160, height: 48 },
+    )
+    await until(t, () => t.frame().includes("rasterizer"))
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    act(() => t.keys.pressArrow("right"))
+    await until(t, () => t.frame().includes("● unsaved"))
+    act(() => t.keys.pressKey("s", { ctrl: true }))
+    await until(t, () => !t.frame().includes("● unsaved"))
+    expect(eikon.lifecycle("pubsaved").dirty).toBe(true)
+    const share = () => {
+      const lines = t.frame().split("\n")
+      const y = lines.findIndex(l => l.includes("share"))
+      return { x: Math.max(0, lines[y]?.indexOf("share") ?? 0), y }
+    }
+    await act(async () => { const p = share(); await t.mouse.click(p.x, p.y) })
+    await until(t, () => t.frame().includes("Submit eikon") || t.frame().includes("Save before sharing?"))
+    if (t.frame().includes("Save before sharing?")) act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Submit eikon"))
     un()
   })
 
@@ -119,10 +168,10 @@ describe("EikonStudio tab", () => {
     // Knobs hint uses "edit", not "open".
     expect(t.frame()).toContain("[Enter] edit")
 
-    // Nav to first rasterizer knob (stub's 'tone') — HEAD has 8 nav
-    // rows when not dirty (open, rasterizer, source, knobsfor, reset,
-    // contrast, invert, flip), so stub.tone is at index 8.
-    for (let i = 0; i < 8; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    // Nav to first rasterizer knob (stub's 'tone') — HEAD has 9 nav
+    // rows when not dirty (open, rasterizer, source, share, knobsfor, reset,
+    // contrast, invert, flip), so stub.tone is at index 9.
+    for (let i = 0; i < 9; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     await until(t, () => /▸ tone/.test(t.frame()))
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("◂ hi ▸"))
@@ -147,8 +196,8 @@ describe("EikonStudio tab", () => {
     )
     await until(t, () => t.frame().includes("tune"))
     expect(t.frame()).toContain("◂ all states ▸")
-    // Land on knobs-for row (open=0, rasterizer=1, source=2, knobsfor=3).
-    for (let i = 0; i < 3; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    // Land on knobs-for row (open=0, rasterizer=1, source=2, share=3, knobsfor=4).
+    for (let i = 0; i < 4; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     await until(t, () => /▸ tune/.test(t.frame()))
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("◂ idle only ▸"))
@@ -185,7 +234,7 @@ describe("EikonStudio tab", () => {
     un()
   })
 
-  run("Enter on eikon row opens picker with seeded eikon + New…; New creates and opens", async () => {
+  run("Enter on eikon row opens picker with existing eikons only", async () => {
     const un = eikon.register(stub)
     seed("alpha")
     prefs.set("eikon", "alpha")
@@ -195,21 +244,11 @@ describe("EikonStudio tab", () => {
       { width: 160, height: 48 },
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    // Row 0 = eikon picker. Enter opens it; "alpha" appears as the
-    // current selection. The trailers (+ New, + Install) may be below
-    // the viewport in a populated sandbox, so filter down to "new" to
-    // bring + New into view, then Enter selects it.
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Open eikon"))
     expect(t.frame()).toContain("alpha")
-    await act(async () => { await t.keys.typeText("new") })
-    await until(t, () => t.frame().includes("+ New"))
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("New eikon"))
-    // Type a fresh name; default `from` is blank, so Enter resolves.
-    await act(async () => { await t.keys.typeText("beta") })
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("beta ▸"))
+    expect(t.frame()).not.toContain("+ New")
+    expect(t.frame()).not.toContain("+ Install")
     un()
   })
 
@@ -223,7 +262,7 @@ describe("EikonStudio tab", () => {
     )
     await until(t, () => t.frame().includes("rasterizer"))
     // Make dirty via a knob adjust.
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     act(() => t.keys.pressEscape())
@@ -242,7 +281,7 @@ describe("EikonStudio tab", () => {
       <EikonGroup focused sub={sub} setSub={i => { sub = i }} />,
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     act(() => t.keys.pressEscape())
@@ -264,7 +303,7 @@ describe("EikonStudio tab", () => {
       <EikonGroup focused sub={sub} setSub={i => { sub = i }} />,
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     act(() => t.keys.pressEscape())
@@ -277,7 +316,7 @@ describe("EikonStudio tab", () => {
     un()
   })
 
-  run("dirty submit prompts save and active consequence before preview", async () => {
+  run("dirty share prompts save with active consequence before preview", async () => {
     const un = eikon.register(stub)
     seed("submitdirty")
     prefs.set("eikon", "submitdirty")
@@ -287,14 +326,17 @@ describe("EikonStudio tab", () => {
       { width: 160, height: 48 },
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
-    act(() => t.keys.pressKey("u"))
-    await until(t, () => t.frame().includes("Save before submit?"))
-    act(() => t.keys.pressKey("s"))
-    await until(t, () => t.frame().includes("Save active 'submitdirty' before submit?"))
-    expect(t.frame()).toContain("Submit itself will not change active selection")
+    for (let i = 0; i < 4; i++) { act(() => t.keys.pressArrow("up")); await t.settle() }
+    await until(t, () => /▸ share/.test(t.frame()))
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Save before sharing?"))
+    expect(t.frame()).toContain("active avatar's backing bytes")
+    expect(t.frame()).toContain("change active selection")
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("Submit eikon"))
     un()
   })
 
@@ -308,7 +350,7 @@ describe("EikonStudio tab", () => {
       { width: 160, height: 48 },
     )
     await until(t, () => t.frame().includes("rasterizer"))
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     act(() => t.keys.pressKey("s", { ctrl: true }))
@@ -329,14 +371,14 @@ describe("EikonStudio tab", () => {
     )
     await until(t, () => t.frame().includes("rasterizer"))
     expect(t.frame()).not.toContain("revert")
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("revert"))
     expect(t.frame()).toContain("▸ reload from disk")
     un()
   })
 
-    run("cold start: Enter opens New eikon; submitting seeds a session", async () => {
+    run("cold start: Enter opens existing eikon picker, not creation", async () => {
     const un = eikon.register(stub)
     prefs.set("eikonRasterizer", "stub")
     let sub = 2
@@ -345,13 +387,10 @@ describe("EikonStudio tab", () => {
       { width: 160, height: 48 },
     )
     await until(t, () => t.frame().includes("No eikon open"))
-    expect(t.frame()).toContain("[Enter] new eikon")
+    expect(t.frame()).toContain("[Enter] open eikon")
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("New eikon"))
-    await act(async () => { await t.keys.typeText("cold") })
-    act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("rasterizer"))
-    expect(t.frame()).toContain("cold ▸")
+    await until(t, () => t.frame().includes("Open eikon"))
+    expect(t.frame()).not.toContain("New eikon")
     un()
   })
 
@@ -368,7 +407,7 @@ describe("EikonStudio tab", () => {
     }
     await using t = await mountNode(<Wrap />, { width: 160, height: 48 })
     await until(t, () => t.frame().includes("rasterizer"))
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     act(() => set!("beta"))
@@ -396,7 +435,7 @@ describe("EikonStudio tab", () => {
     act(() => t.keys.pressKey("r"))
     await until(t, () => t.frame().includes("base.png · 1×1 · 68 B"))
 
-    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    for (let i = 0; i < 6; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     act(() => t.keys.pressArrow("right"))
     await until(t, () => t.frame().includes("● unsaved"))
     writeFileSync(join(eikon.sourceDir("refresh"), "base.png"), new Uint8Array([...PX, 0, 0]))
@@ -583,8 +622,8 @@ describe("EikonStudio tab", () => {
     // ↓ to source.
     act(() => t.keys.pressArrow("down")); await t.settle()
     expect(t.frame()).toContain("Pick, generate, or clear source")
-    // ↓↓↓ → contrast (studio-owned tone row, has a KnobDef.hint).
-    for (let i = 0; i < 3; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    // ↓↓↓↓ → contrast (studio-owned tone row, has a KnobDef.hint).
+    for (let i = 0; i < 4; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
     expect(t.frame()).toContain("Spread pixel values around their mean")
     // ↓↓↓ past invert/flip → first rasterizer knob (stub's 'tone' has
     // no declared hint, so the generic cycle text renders).
@@ -636,12 +675,12 @@ describe("EikonStudio tab", () => {
   })
 })
 
-describe("EikonGallery tab", () => {
+describe("EikonLibrary tab", () => {
   test("shows installed Nous once when it shadows bundled Nous", async () => {
     mkdirSync(join(HH, "eikons"), { recursive: true })
     seed("nous")
     prefs.set("eikon", "nous")
-    await using t = await mountNode(<EikonGallery focused />, { width: 160, height: 48 })
+    await using t = await mountNode(<EikonLibrary focused />, { width: 160, height: 48 })
     await until(t, () => t.frame().includes("Library (") && /●\s+nous/.test(t.frame()))
     const rows = t.frame().split("\n").filter(l => /^│\s*(?:▸\s*)?(?:●\s*)?nous\s+│/i.test(l))
     expect(rows).toHaveLength(1)

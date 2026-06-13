@@ -70,7 +70,7 @@ test("baked mode: no url → 'attach' hint, no download row", async () => {
   expect(f).toContain("AB@@")
 })
 
-test("gallery badge: ○ available vs ● source", async () => {
+test("library badge: ○ available vs ● source", async () => {
   // One eikon with url + no source, one with source present.
   eikon.ensure("gal-a")
   writeFileSync(eikon.file("gal-a"), make("gal-a", "http://x/"))

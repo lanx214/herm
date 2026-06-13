@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { runtimeDescriptor, type Catalog } from "eikon"
-import * as market from "../src/service/eikon-marketplace"
+import * as catalog from "../src/service/eikon-catalog"
 import { eikon } from "../src/service/eikon"
 import * as prefs from "../src/context/preferences"
 
@@ -172,10 +172,10 @@ afterEach(() => {
   rmSync(join(HH, "eikons"), { recursive: true, force: true })
 })
 
-describe("service/eikon-marketplace", () => {
+describe("service/eikon-catalog", () => {
   test("loads and searches remote rows without full preview fetches", async () => {
     const fx = fixture()
-    const state = await market.load({ catalog: fx.base, allowPrivate: true, query: "kaio" })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true, query: "kaio" })
     expect(state.status).toBe("ready")
     expect(state.query).toBe("kaio")
     expect(state.rows.map(r => r.entry.name)).toEqual(["ares"])
@@ -185,9 +185,25 @@ describe("service/eikon-marketplace", () => {
     fx.srv.stop()
   })
 
+  test("ui rows search name and author only and can hide installed rows", async () => {
+    const fx = fixture()
+    eikon.ensure("mono")
+    writeFileSync(eikon.file("mono"), `${JSON.stringify({ eikon: 1, name: "mono" })}
+`)
+    writeFileSync(join(eikon.dir("mono"), "manifest.json"), JSON.stringify({
+      kind: "eikon.package", id: "liftaris/mono", name: "mono",
+      origin: { sourceKey: `${fx.base}/mono/`, identityKey: `${fx.base}/mono/`, packageUrl: `${fx.base}/mono/manifest.json` },
+    }, null, 2))
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
+    expect(state.service!.rows("nous", { mode: "ui" }).map(r => r.entry.name)).toEqual(["mono"])
+    expect(state.service!.rows("poster", { mode: "ui" })).toEqual([])
+    expect(state.service!.rows("", { mode: "ui", hideInstalled: true }).map(r => r.entry.name)).not.toContain("mono")
+    fx.srv.stop()
+  })
+
   test("returns recoverable error state for catalog load failure", async () => {
     const srv = serve([{ path: "/eikons/index.json", body: "nope", status: 503 }])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     expect(state.status).toBe("error")
     expect(state.error).toContain("catalog: HTTP 503")
     expect(state.rows).toEqual([])
@@ -204,7 +220,7 @@ describe("service/eikon-marketplace", () => {
     }, null, 2))
     prefs.set("eikon", "ares")
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const byPoster = new Map(state.rows.map(r => [r.entry.poster, r]))
     expect(byPoster.get("ALT")!.installed).toBe(true)
     expect(byPoster.get("ALT")!.active).toBe(true)
@@ -218,26 +234,26 @@ describe("service/eikon-marketplace", () => {
     eikon.ensure("ares")
     writeFileSync(eikon.file("ares"), `${JSON.stringify({ eikon: 1, name: "ares" })}\n`)
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const rows = state.rows.filter(r => r.entry.name === "ares")
     expect(rows.every(r => r.installed)).toBe(true)
     expect(rows.every(r => r.installState === "legacy-name-match")).toBe(true)
     fx.srv.stop()
   })
 
-  test("flat legacy files do not satisfy marketplace installed state", async () => {
+  test("flat legacy files do not satisfy catalog installed state", async () => {
     const fx = fixture()
     mkdirSync(join(HH, "eikons"), { recursive: true })
     writeFileSync(join(HH, "eikons", "mono.eikon"), launch)
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     expect(state.rows.find(r => r.entry.name === "mono")!.installed).toBe(false)
     fx.srv.stop()
   })
 
   test("available rows are installable when no eikon is active", async () => {
     const fx = fixture()
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const row = state.rows.find(r => r.entry.name === "mono")!
 
     expect(row.installed).toBe(false)
@@ -254,7 +270,7 @@ describe("service/eikon-marketplace", () => {
     eikon.ensure("mono")
     writeFileSync(eikon.file("mono"), `${JSON.stringify({ eikon: 1, name: "mono" })}\n`)
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const mono = state.rows.find(r => r.entry.name === "mono")!
     const alt = state.rows.find(r => r.entry.poster === "ALT")!
     const ares = state.rows.find(r => r.entry.poster === "ARES")!
@@ -268,7 +284,7 @@ describe("service/eikon-marketplace", () => {
 
   test("preview loads selected entry with cache and abort support", async () => {
     const fx = fixture()
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const svc = state.service!
     const row = state.rows[0]!
 
@@ -289,7 +305,7 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/zip/manifest.json", body: gz.manifest },
       { path: "/eikons/zip/zip.eikon", body: gz.bytes },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
 
     expect(await state.service!.preview(state.rows[0]!.entry.identityKey)).toBe(launch)
     srv.stop()
@@ -299,7 +315,7 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/zip/manifest.json", body: gz.manifest },
       { path: "/eikons/zip/zip.eikon", body: gz.bytes, headers: { "content-encoding": "gzip" } },
     ])
-    const broken = await market.load({ catalog: `http://localhost:${bad.port}/eikons`, allowPrivate: true })
+    const broken = await catalog.load({ catalog: `http://localhost:${bad.port}/eikons`, allowPrivate: true })
 
     await expect(broken.service!.preview(broken.rows[0]!.entry.identityKey)).rejects.toThrow(/content-encoding/i)
     bad.stop()
@@ -314,7 +330,7 @@ describe("service/eikon-marketplace", () => {
       load: async () => "",
     }
     const seen: string[] = []
-    const svc = new market.MarketplaceService(cat, {
+    const svc = new catalog.CatalogService(cat, {
       fetcher: async input => {
         seen.push(String(input))
         if (String(input).endsWith("runtime.eikon")) return new Response(wire(gz.bytes), { headers: { "content-encoding": "gzip" } })
@@ -326,14 +342,14 @@ describe("service/eikon-marketplace", () => {
     expect(seen.some(u => u.endsWith("runtime.eikon"))).toBe(true)
 
     const raw: Catalog = { ...cat, entries: [entry({ name: "raw", runtimeUrl: "runtime.eikon" })] }
-    const open = new market.MarketplaceService(raw, { fetcher: async () => new Response(wire(gz.bytes), { headers: { "content-encoding": "gzip" } }) })
+    const open = new catalog.CatalogService(raw, { fetcher: async () => new Response(wire(gz.bytes), { headers: { "content-encoding": "gzip" } }) })
 
     expect(await open.preview(raw.entries[0]!.identityKey)).toBe(launch)
   })
 
   test("preview deduplicates concurrent requests and caps cached entries", async () => {
     const fx = fixture()
-    const state = await market.load({ catalog: fx.base, allowPrivate: true, previewCacheLimit: 1 })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true, previewCacheLimit: 1 })
     const svc = state.service!
     const ares = state.rows.find(r => r.entry.poster === "ARES")!
     const mono = state.rows.find(r => r.entry.name === "mono")!
@@ -363,7 +379,7 @@ describe("service/eikon-marketplace", () => {
       entries: ["one", "two", "three"].map(name => entry({ name })),
       load: async () => "",
     }
-    const svc = new market.MarketplaceService(cat, {
+    const svc = new catalog.CatalogService(cat, {
       concurrency: 1,
       fetcher: async input => {
         active += 1
@@ -391,11 +407,11 @@ describe("service/eikon-marketplace", () => {
     expect(peak).toBe(1)
   })
 
-  test("marketplace install writes files, bumps revision, and does not activate", async () => {
+  test("catalog install writes files, bumps revision, and does not activate", async () => {
     const fx = fixture()
     prefs.set("eikon", "old")
     const before = eikon.revision()
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const out = await state.service!.install(state.rows[0]!.entry.identityKey)
 
     expect(out.name).toBe("ares")
@@ -408,14 +424,14 @@ describe("service/eikon-marketplace", () => {
     fx.srv.stop()
   })
 
-  test("marketplace install preserves gzip runtime stored bytes", async () => {
+  test("catalog install preserves gzip runtime stored bytes", async () => {
     const gz = gzip("zip")
     const srv = serve([
       { path: "/eikons/index.json", body: req => [catalogRow({ name: "zip", source: "zip/", trust: gz.trust }, `${new URL(req.url).origin}/eikons/`)] },
       { path: "/eikons/zip/manifest.json", body: gz.manifest },
       { path: "/eikons/zip/zip.eikon", body: gz.bytes },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
 
     const out = await state.service!.install(state.rows[0]!.entry.identityKey)
 
@@ -425,7 +441,7 @@ describe("service/eikon-marketplace", () => {
     srv.stop()
   })
 
-  test("marketplace installs launch package catalog entries from explicit manifest URLs", async () => {
+  test("catalog installs launch package catalog entries from explicit manifest URLs", async () => {
     const pkgManifest = {
       kind: "eikon.package",
       schemaVersion: "1.0",
@@ -459,7 +475,7 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/packages/pkg/source/base.png", body: png },
       { path: "/eikons/packages/pkg/source/idle.mp4", body: new Uint8Array(8) },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     expect(state.status).toBe("ready")
     const out = await state.service!.install(state.rows[0]!.entry.identityKey, { media: true })
 
@@ -471,7 +487,7 @@ describe("service/eikon-marketplace", () => {
     srv.stop()
   })
 
-  test("marketplace install binds verified catalog trust to fetched package manifest", async () => {
+  test("catalog install binds verified catalog trust to fetched package manifest", async () => {
     const good = pack("ares")
     const evil = pack("ares", launch.replace("abcd", "EVIL"))
     const srv = serve([
@@ -484,14 +500,14 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/ares/ares.eikon", body: launch.replace("abcd", "EVIL") },
       { path: "/eikons/ares/source.png", body: png },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
 
     await expect(state.service!.install(state.rows[0]!.entry.identityKey)).rejects.toThrow(/catalog trust mismatch: manifest digest/)
     expect(existsSync(eikon.file("ares"))).toBe(false)
     srv.stop()
   })
 
-  test("marketplace install records verified trust after catalog digest binding", async () => {
+  test("catalog install records verified trust after catalog digest binding", async () => {
     const man = pack("ares")
     const srv = serve([
       { path: "/eikons/index.json", body: req => [catalogRow({
@@ -503,7 +519,7 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/ares/ares.eikon", body: launch },
       { path: "/eikons/ares/source.png", body: png },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     await state.service!.install(state.rows[0]!.entry.identityKey)
 
     const got = JSON.parse(readFileSync(join(eikon.dir("ares"), "manifest.json"), "utf8"))
@@ -518,12 +534,12 @@ describe("service/eikon-marketplace", () => {
       entries: [entry({ name: "secret", runtimeUrl: "http://127.0.0.1:65530/secret.eikon" })],
       load: async () => "",
     }
-    const svc = new market.MarketplaceService(cat, { fetcher: async () => { seen += 1; return new Response(launch) } })
+    const svc = new catalog.CatalogService(cat, { fetcher: async () => { seen += 1; return new Response(launch) } })
 
     await expect(svc.preview(cat.entries[0]!.identityKey)).rejects.toThrow(/private host/)
     expect(seen).toBe(0)
 
-    const dev = new market.MarketplaceService(cat, { allowPrivate: true, fetcher: async () => { seen += 1; return new Response(launch) } })
+    const dev = new catalog.CatalogService(cat, { allowPrivate: true, fetcher: async () => { seen += 1; return new Response(launch) } })
     expect(await dev.preview(cat.entries[0]!.identityKey)).toBe(launch)
     expect(seen).toBe(1)
   })
@@ -539,7 +555,7 @@ describe("service/eikon-marketplace", () => {
       origin: { sourceKey: `${fx.base}/ares/`, identityKey: `${fx.base}/ares/`, packageUrl: `${fx.base}/ares/manifest.json` },
     }))
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const row = state.rows.find(r => r.entry.poster === "ARES")!
 
     expect(row.installed).toBe(true)
@@ -548,12 +564,12 @@ describe("service/eikon-marketplace", () => {
     fx.srv.stop()
   })
 
-  test("failed marketplace install is retryable and does not activate or mark installed", async () => {
+  test("failed catalog install is retryable and does not activate or mark installed", async () => {
     const srv = serve([
       { path: "/eikons/index.json", body: req => [catalogRow({ name: "bad", poster: "B", source: "bad/" }, `${new URL(req.url).origin}/eikons/`)] },
       { path: "/eikons/bad/manifest.json", body: "missing", status: 404 },
     ])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     await expect(state.service!.install(state.rows[0]!.entry.identityKey)).rejects.toThrow(/download failed 404/)
     expect(prefs.get("eikon")).toBeUndefined()
     expect(eikon.list().some(x => x.name === "bad")).toBe(false)
@@ -562,7 +578,7 @@ describe("service/eikon-marketplace", () => {
 
   test("empty and no-results states are stable", async () => {
     const srv = serve([{ path: "/eikons/index.json", body: [] }])
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true, query: "none" })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true, query: "none" })
     expect(state.status).toBe("empty")
     expect(state.rows).toEqual([])
     expect(state.selected).toBeUndefined()
@@ -584,7 +600,7 @@ describe("service/eikon-marketplace", () => {
       origin: { source: `${fx.base}/ares/manifest.json`, at: "2026-06-07T00:00:00.000Z", kind: "default-catalog", trust: "verified", sourceKey: `${fx.base}/ares/`, packageUrl: `${fx.base}/ares/manifest.json` },
     }, null, 2))
 
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const row = state.rows.find(r => r.entry.poster === "ARES")!
 
     expect(row.installState).toBe("installed")
@@ -615,7 +631,7 @@ describe("service/eikon-marketplace", () => {
       origin: { sourceKey: `http://localhost:${srv.port}/eikons/live/`, identityKey: `http://localhost:${srv.port}/eikons/live/`, packageUrl: `http://localhost:${srv.port}/eikons/live/manifest.json` },
     }, null, 2))
     prefs.set("eikon", "live")
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     const row = state.rows[0]!
     const before = readFileSync(mf, "utf8")
 
@@ -659,7 +675,7 @@ describe("service/eikon-marketplace", () => {
       origin: { sourceKey: `http://localhost:${srv.port}/eikons/blob/`, identityKey: `http://localhost:${srv.port}/eikons/blob/`, packageUrl: `http://localhost:${srv.port}/eikons/blob/manifest.json` },
     }, null, 2))
 
-    const state = await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
     const out = await state.service!.downloadSource(state.rows[0]!.entry.identityKey)
 
     expect(out.name).toBe("blob")
@@ -668,6 +684,35 @@ describe("service/eikon-marketplace", () => {
     expect(eikon.findSource("blob")).toEndWith("base.png")
     expect(eikon.findSource("blob", "idle")).toEndWith("idle.mp4")
     expect(eikon.readStudio("blob")!.sources).toEqual({ base: "base.png", idle: "idle.mp4" })
+    srv.stop()
+  })
+
+  test("downloadSource rejects unsafe source roles before writing", async () => {
+    const man = {
+      ...pack("badrole"),
+      files: [
+        { path: "badrole.eikon", role: "runtime", mediaType: "application/vnd.eikon.stream+jsonl", size: launch.length, digest: digest(launch) },
+        { path: "source/escape.png", role: "source../escape", mediaType: "image/png", size: png.length, digest: digest(png) },
+      ],
+      source: {}
+    }
+    const srv = serve([
+      { path: "/eikons/index.json", body: req => [catalogRow({ name: "badrole", source: "badrole/" }, `${new URL(req.url).origin}/eikons/`)] },
+      { path: "/eikons/badrole/manifest.json", body: man },
+      { path: "/eikons/badrole/badrole.eikon", body: launch },
+      { path: "/eikons/badrole/source/escape.png", body: png },
+    ])
+    eikon.ensure("badrole")
+    writeFileSync(eikon.file("badrole"), launch)
+    writeFileSync(join(eikon.dir("badrole"), "manifest.json"), JSON.stringify({
+      ...man,
+      origin: { sourceKey: `http://localhost:${srv.port}/eikons/badrole/`, identityKey: `http://localhost:${srv.port}/eikons/badrole/`, packageUrl: `http://localhost:${srv.port}/eikons/badrole/manifest.json` },
+    }, null, 2))
+
+    const state = await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })
+    await expect(state.service!.downloadSource(state.rows[0]!.entry.identityKey)).rejects.toThrow(/no source media|unsupported/)
+    expect(existsSync(join(eikon.sourceDir("badrole"), "escape.png"))).toBe(false)
+    expect(existsSync(join(eikon.dir("badrole"), "escape.png"))).toBe(false)
     srv.stop()
   })
 
@@ -684,7 +729,7 @@ describe("service/eikon-marketplace", () => {
       })],
       load: async () => "",
     }
-    const row = new market.MarketplaceService(cat).rows()[0]!
+    const row = new catalog.CatalogService(cat).rows()[0]!
 
     expect(row.installed).toBe(true)
     expect(row.active).toBe(true)
@@ -710,7 +755,7 @@ describe("service/eikon-marketplace", () => {
       { path: "/eikons/nous/source.png", body: png },
     ])
     prefs.set("eikon", "nous")
-    const svc = (await market.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })).service!
+    const svc = (await catalog.load({ catalog: `http://localhost:${srv.port}/eikons`, allowPrivate: true })).service!
     const before = svc.rows()[0]!
 
     expect(before.installed).toBe(true)
@@ -728,7 +773,7 @@ describe("service/eikon-marketplace", () => {
     srv.stop()
   })
 
-  test("marketplace install requires acknowledgement before replacing active same-name package", async () => {
+  test("catalog install requires acknowledgement before replacing active same-name package", async () => {
     const fx = fixture()
     const old = launch.replace("abcd", "OLDX")
     eikon.ensure("ares")
@@ -738,7 +783,7 @@ describe("service/eikon-marketplace", () => {
       origin: { sourceKey: `${fx.base}/alt/`, identityKey: `${fx.base}/alt/`, packageUrl: `${fx.base}/alt/manifest.json`, at: "2026-06-07T00:00:00.000Z" },
     }, null, 2))
     prefs.set("eikon", "ares")
-    const state = await market.load({ catalog: fx.base, allowPrivate: true })
+    const state = await catalog.load({ catalog: fx.base, allowPrivate: true })
     const row = state.rows.find(r => r.entry.poster === "ARES")!
 
     expect(row.installState).toBe("active-name-conflict")
@@ -780,7 +825,7 @@ describe("service/eikon-marketplace", () => {
       ...sourced,
       origin: { sourceKey: "https://example.com/eikons/sourced/", identityKey: "https://example.com/eikons/sourced/", packageUrl: "https://example.com/eikons/sourced/manifest.json" },
     }, null, 2))
-    const svc = new market.MarketplaceService(cat, { fetcher: async () => new Response(JSON.stringify(runtime)) })
+    const svc = new catalog.CatalogService(cat, { fetcher: async () => new Response(JSON.stringify(runtime)) })
     const rows = svc.rows()
     const run = rows.find(r => r.entry.name === "runtime")!
     const src = rows.find(r => r.entry.name === "sourced")!
@@ -802,7 +847,7 @@ describe("service/eikon-marketplace", () => {
       ],
       load: async () => "",
     }
-    const svc = new market.MarketplaceService(cat)
+    const svc = new catalog.CatalogService(cat)
     const rows = svc.rows()
 
     expect(rows.find(r => r.entry.name === "legacy")!.trust).toBe("unverified")
@@ -816,7 +861,7 @@ describe("service/eikon-marketplace", () => {
       entries: [{ ...entry({ name: "future" }), compatibility: { eikon: ">=99", available: false, reason: "requires newer Herm" } }],
       load: async () => "",
     }
-    const svc = new market.MarketplaceService(cat)
+    const svc = new catalog.CatalogService(cat)
     const row = svc.rows()[0]!
 
     expect(row.installState).toBe("incompatible")
