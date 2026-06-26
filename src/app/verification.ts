@@ -42,10 +42,23 @@ export type VerificationModel = {
   tone: "muted" | "warn" | "ok" | "err"
 }
 
+function evidence(v: unknown): string | undefined {
+  if (typeof v === "string") return v.trim() || undefined
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+  const rec = v as Record<string, unknown>
+  return ["command", "canonical_command", "message", "summary", "kind", "scope"]
+    .map(key => {
+      const val = rec[key]
+      if (typeof val !== "string") return false
+      return val.trim() && `${key}: ${val.trim()}`
+    })
+    .find(Boolean) || undefined
+}
+
 export function model(v: VerificationState | null | undefined): VerificationModel | null {
   if (!v) return null
   const paths = v.changed_paths?.filter(Boolean) ?? []
-  const evidence = v.evidence?.trim()
+  const detail = evidence(v.evidence)
   const stale = v.status === "stale" && paths.length > 0
     ? `changed: ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` +${paths.length - 3}` : ""}`
     : undefined
@@ -53,7 +66,7 @@ export function model(v: VerificationState | null | undefined): VerificationMode
     status: v.status,
     glyph: GLYPHS[v.status],
     label: LABELS[v.status],
-    detail: stale ?? evidence ?? LABELS[v.status],
+    detail: stale ?? detail ?? LABELS[v.status],
     tone: TONES[v.status],
   }
 }

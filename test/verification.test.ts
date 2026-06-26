@@ -26,4 +26,27 @@ describe("verification render model", () => {
 
     expect(model(state)?.detail).toBe("changed: src/app.tsx, src/app/verification.ts, test/verification.test.ts +1")
   })
+
+  test("summarizes object evidence", () => {
+    const state: VerificationState = {
+      status: "passed",
+      evidence: {
+        command: "bun test",
+        status: "passed",
+      },
+    }
+
+    expect(model(state)?.detail).toBe("command: bun test")
+  })
+
+  test("falls back for stale object evidence without changed paths", () => {
+    const state: VerificationState = {
+      status: "stale",
+      evidence: {
+        status: "stale",
+      },
+    }
+
+    expect(model(state)?.detail).toBe("verify stale")
+  })
 })

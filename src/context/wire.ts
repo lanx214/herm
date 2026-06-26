@@ -110,7 +110,7 @@ export type VerificationStatus = "not_applicable" | "unverified" | "passed" | "f
 
 export type VerificationState = {
   status: VerificationStatus
-  evidence?: string
+  evidence?: unknown
   root?: string
   session_id?: string
   changed_paths?: string[]
