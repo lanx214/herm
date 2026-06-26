@@ -52,6 +52,7 @@ export type Task = {
   created_at: number; updated_at: number; completed_at: number | null
   result: string | null; error: string | null
   tenant: string | null; pid: number | null
+  project_id: string | null
   workspace_kind: string | null; workspace_path: string | null
   branch_name: string | null
   skills: string[]
@@ -474,6 +475,7 @@ const selectCol = (have: Set<string>, name: string, alias?: string): string => {
 const taskColumns = (have: Set<string>): string => [
   "id", "title", selectCol(have, "body"), selectCol(have, "assignee"),
   "status", "priority", selectCol(have, "tenant"),
+  selectCol(have, "project_id"),
   selectCol(have, "created_at"), selectCol(have, "completed_at"),
   selectCol(have, "result"), selectCol(have, "last_spawn_error"),
   selectCol(have, "worker_pid"),
@@ -506,6 +508,7 @@ const toTask = (r: Record<string, unknown>): Task => ({
   result: (r.result as string) ?? null,
   error: (r.last_spawn_error as string) ?? null,
   tenant: (r.tenant as string) ?? null,
+  project_id: (r.project_id as string) ?? null,
   pid: (r.worker_pid as number) ?? null,
   workspace_kind: (r.workspace_kind as string) ?? null,
   workspace_path: (r.workspace_path as string) ?? null,

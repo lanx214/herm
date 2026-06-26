@@ -766,8 +766,9 @@ describe("Kanban tab", () => {
     await until(t, () => /▸ More/.test(t.frame()))
     await act(async () => { await t.keys.typeText(" ") })   // expand
     await until(t, () => /Workspace/.test(t.frame()))
-    // more→tenant→workspace
+    // more→tenant→project→workspace
     act(() => t.keys.pressArrow("down")); await t.settle() // tenant
+    act(() => t.keys.pressArrow("down")); await t.settle() // project
     act(() => t.keys.pressArrow("down")); await t.settle() // workspace
     await until(t, () => /▸ Workspace/.test(t.frame()))
     await act(async () => { await t.keys.typeText(" ") })   // open workspace picker
@@ -784,6 +785,31 @@ describe("Kanban tab", () => {
     act(() => t.keys.pressEnter({ ctrl: true }))
     await until(t, () => cmds.length === 1)
     expect(cmds[0]).toBe("hermes kanban --board default create 'in a dir' --workspace dir:/tmp/work")
+    t.destroy()
+  })
+
+  test("create form: Project field feeds --project", async () => {
+    const cmds: string[] = []
+    const gw = new MockGateway({
+      "shell.exec": p => { if (!/\bdiagnostics\b/.test(p.command as string)) cmds.push(p.command as string); return { stdout: "tp", stderr: "", code: 0 } },
+    })
+    const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
+    await until(t, () => t.frame().includes("Kanban · 3 boards"))
+    await act(async () => { await t.keys.typeText("n") })
+    await until(t, () => t.frame().includes("New Task"))
+    await act(async () => { await t.keys.typeText("linked task") })
+    await t.settle()
+    for (let i = 0; i < 5; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
+    await act(async () => { await t.keys.typeText(" ") })
+    await until(t, () => /Project/.test(t.frame()))
+    act(() => t.keys.pressArrow("down")); await t.settle()
+    act(() => t.keys.pressArrow("down")); await t.settle()
+    await until(t, () => /▸ Project/.test(t.frame()))
+    await act(async () => { await t.keys.typeText("herm") })
+    await t.settle()
+    act(() => t.keys.pressEnter({ ctrl: true }))
+    await until(t, () => cmds.length === 1)
+    expect(cmds[0]).toBe("hermes kanban --board default create 'linked task' --project herm")
     t.destroy()
   })
 
@@ -837,6 +863,7 @@ describe("Kanban tab", () => {
     await act(async () => { await t.keys.typeText(" ") })   // expand
     await until(t, () => /Workspace/.test(t.frame()))
     act(() => t.keys.pressArrow("down")); await t.settle() // tenant
+    act(() => t.keys.pressArrow("down")); await t.settle() // project
     act(() => t.keys.pressArrow("down")); await t.settle() // workspace
     await act(async () => { await t.keys.typeText(" ") })   // open workspace picker
     await until(t, () => /isolated temp dir under the board root/.test(t.frame()))
@@ -1627,26 +1654,27 @@ describe("scheduled status + new fields parity", () => {
     const db = new Database(hermesPath("kanban/boards/sched/kanban.db"), { create: true })
     schema(db)
     db.run("ALTER TABLE tasks ADD COLUMN branch_name TEXT")
+    db.run("ALTER TABLE tasks ADD COLUMN project_id TEXT")
     db.run("ALTER TABLE tasks ADD COLUMN model_override TEXT")
     db.run("ALTER TABLE tasks ADD COLUMN session_id TEXT")
     db.run("ALTER TABLE tasks ADD COLUMN last_heartbeat_at INTEGER")
     const ins = db.prepare(
       `INSERT INTO tasks (id, title, status, priority, created_at,
          started_at, workspace_kind, workspace_path, branch_name,
-         model_override, session_id, last_heartbeat_at, worker_pid)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         project_id, model_override, session_id, last_heartbeat_at, worker_pid)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     // sch1: parked in scheduled, full set of new fields.
     ins.run("sch1", "delayed follow-up", "scheduled", 4, now - 300,
       null, "worktree", "/tmp/wt/sch1", "feat/delayed",
-      "anthropic/claude-sonnet-4", "sess-abc123", null, null)
+      "herm", "anthropic/claude-sonnet-4", "sess-abc123", null, null)
     // sch2: running with model + heartbeat.
     ins.run("sch2", "model-pinned worker", "running", 3, now - 60,
       now - 60, null, null, null,
-      "openrouter/qwen3-coder", null, now - 45, 9999)
+      null, "openrouter/qwen3-coder", null, now - 45, 9999)
     // sch3: plain ready task, exercises null-column fallback.
     ins.run("sch3", "vanilla", "ready", 1, now - 30,
-      null, null, null, null, null, null, null, null)
+      null, null, null, null, null, null, null, null, null)
     db.close()
     resetKanban()
   })
@@ -1661,6 +1689,7 @@ describe("scheduled status + new fields parity", () => {
     const row = b.get("scheduled")?.[0]
     expect(row?.id).toBe("sch1")
     expect(row?.branch_name).toBe("feat/delayed")
+    expect(row?.project_id).toBe("herm")
     expect(row?.model_override).toBe("anthropic/claude-sonnet-4")
     expect(row?.session_id).toBe("sess-abc123")
     expect(row?.workspace_kind).toBe("worktree")
@@ -1675,12 +1704,13 @@ describe("scheduled status + new fields parity", () => {
     // Schema-tolerance: vanilla task has all new fields null.
     const ready = b.get("ready")?.find(t => t.id === "sch3")
     expect(ready?.branch_name).toBeNull()
+    expect(ready?.project_id).toBeNull()
     expect(ready?.model_override).toBeNull()
     expect(ready?.session_id).toBeNull()
     expect(ready?.last_heartbeat_at).toBeNull()
   })
 
-  test("detail pane renders Branch / Model / Session for scheduled task", async () => {
+  test("detail pane renders Project / Branch / Model / Session for scheduled task", async () => {
     const t = await mountNode(<Kanban focused />, { width: 200, height: 60 })
     try {
       await until(t, () => /▾\s+sched/.test(t.frame()))
@@ -1698,6 +1728,7 @@ describe("scheduled status + new fields parity", () => {
       act(() => t.keys.pressEnter())
       await until(t, () => /Title\s+delayed follow-up/.test(t.frame()))
       const f = t.frame()
+      expect(f).toMatch(/Project\s+herm/)
       expect(f).toMatch(/Branch\s+feat\/delayed/)
       expect(f).toMatch(/Model\s+anthropic\/claude-sonnet-4/)
       expect(f).toMatch(/Session\s+sess-abc123/)

@@ -442,6 +442,14 @@ const SidePane = memo((p: { pane: Pane; on: boolean; sel: number; diags: Diag[] 
                 </box>
               </box>
             : null}
+          {d.project_id
+            ? <box height={1} flexDirection="row" paddingLeft={1}>
+                <box width={10} flexShrink={0}><text fg={theme.textMuted}>Project</text></box>
+                <box flexGrow={1} minWidth={0} overflow="hidden">
+                  <text fg={theme.textMuted}>{d.project_id}</text>
+                </box>
+              </box>
+            : null}
           {d.workspace_kind
             ? <box height={1} flexDirection="row" paddingLeft={1}>
                 <box width={10} flexShrink={0}><text fg={theme.textMuted}>Workspace</text></box>
@@ -903,6 +911,7 @@ export const Kanban = memo((props: { focused?: boolean }) => {
         d.parent ? `--parent ${q(d.parent)}` : "",
         d.triage ? "--triage" : "",
         d.tenant ? `--tenant ${q(d.tenant)}` : "",
+        d.project ? `--project ${q(d.project)}` : "",
         ws,
         d.maxRuntime ? `--max-runtime ${q(d.maxRuntime)}` : "",
         ...d.skills.map(s => `--skill ${q(s)}`),
