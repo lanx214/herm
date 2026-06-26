@@ -17,6 +17,7 @@ export type Side = {
   onBackground?: (task_id: string, text: string) => void
   onBtw?: (text: string) => void
   onStatus?: (text: string) => void
+  onSessionTitle?: (sid?: string, title?: string) => void
   onSkin?: (skin: GatewaySkin | null | undefined) => void
   onApprovalRemembered?: () => void
   /** voice.status event — gateway VAD loop state change (listening/transcribing/idle). */
@@ -55,6 +56,10 @@ export function mapEvent(ev: GatewayEvent, side: Side): Action | null {
       if (si.credential_warning) side.onStatus?.(si.credential_warning)
       return { kind: "system", text: label }
     }
+
+    case "session.title":
+      side.onSessionTitle?.(ev.payload.session_id, ev.payload.title)
+      return null
 
     case "message.start":
       perf.count("stream:start")

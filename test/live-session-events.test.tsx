@@ -81,4 +81,41 @@ describe("live session event routing", () => {
     expect(t.frame()).not.toContain("done elsewhere")
     t.destroy()
   })
+
+  test("session.title updates active title without transcript noise", async () => {
+    const gw = new MockGateway({
+      "session.resume": p => ({ session_id: p.session_id, messages: [] }),
+    })
+    const t = await mount({ gw, launch: { mode: "resume", sid: "sid-b", splash: false } })
+    await until(t, () => t.frame().includes("Ready"))
+
+    act(() => t.gw.push({
+      type: "session.title",
+      payload: { session_id: "sid-b", title: "Generated B" },
+    }))
+    await until(t, () => /Title\s+Generated B/.test(t.frame()))
+
+    expect(t.frame()).not.toContain("session.title")
+    t.destroy()
+  })
+
+  test("session.title ignores missing and inactive payloads", async () => {
+    const gw = new MockGateway({
+      "session.resume": p => ({ session_id: p.session_id, messages: [] }),
+    })
+    const t = await mount({ gw, launch: { mode: "resume", sid: "sid-b", splash: false } })
+    await until(t, () => t.frame().includes("Ready"))
+
+    act(() => {
+      t.gw.push({ type: "session.title", payload: { title: "No ID" } })
+      t.gw.push({ type: "session.title", payload: { session_id: "sid-b" } })
+      t.gw.push({ type: "session.title", payload: { session_id: "sid-a", title: "Wrong Session" } })
+    })
+    await t.settle()
+
+    expect(t.frame()).not.toContain("No ID")
+    expect(t.frame()).not.toContain("Wrong Session")
+    expect(t.frame()).toMatch(/Title\s+—/)
+    t.destroy()
+  })
 })

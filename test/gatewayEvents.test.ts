@@ -34,6 +34,16 @@ describe("mapEvent", () => {
     expect(r.calls.status).toEqual(["no key"])
   })
 
+  test("session.title is side-effect only", () => {
+    const got: unknown[] = []
+    const r = map({
+      type: "session.title",
+      payload: { session_id: "sid-a", title: "Auto Title" },
+    }, { onSessionTitle: (...a) => got.push(a) })
+    expect(r.action).toBeNull()
+    expect(got).toEqual([["sid-a", "Auto Title"]])
+  })
+
   test("message.delta empty → null", () => {
     expect(map({ type: "message.delta", payload: { text: "" } }).action).toBeNull()
     expect(map({ type: "message.delta", payload: { text: "x" } }).action)

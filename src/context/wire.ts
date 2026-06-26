@@ -23,6 +23,7 @@ export type GatewayEvent = ({
   | { type: "gateway.start_timeout"; payload?: { cwd?: string; python?: string } }
   | { type: "gateway.protocol_error"; payload?: { preview?: string } }
   | { type: "session.info"; payload: SessionInfo }
+  | { type: "session.title"; payload: { session_id?: string; title?: string } }
   | { type: "skin.changed"; payload?: GatewaySkin }
   | { type: "message.start"; payload?: undefined }
   | { type: "message.delta"; payload?: { text?: string; rendered?: string } }

@@ -12,6 +12,7 @@ import { useToast } from "../ui/toast"
 import { openAlert } from "../dialogs/alert"
 import { mapEvent } from "../context/events"
 import { deriveSkin, type SkinState } from "../context/skin"
+import { home } from "../home"
 import { useBackground } from "./background"
 import type { Action } from "./turnReducer"
 import type { useSession } from "./useSession"
@@ -101,6 +102,12 @@ export function useStream(c: Ctx) {
     timers.current.push(id)
   }, [gw])
 
+  const retitle = useCallback((sid?: string, title?: string) => {
+    if (!sid || title === undefined) return
+    if (sid === ctx.current.sidRef.current) ctx.current.setTitle(title)
+    home.update("recentSessions", rows => rows.map(r => r.id === sid ? { ...r, title } : r))
+  }, [])
+
   const handle = useCallback((ev: GatewayEvent) => {
     const x = ctx.current
     if (ev.type === "gateway.ready") info.current = false
@@ -167,6 +174,7 @@ export function useStream(c: Ctx) {
         })
       },
       onStatus: (text) => x.setStatus(text),
+      onSessionTitle: retitle,
       onApprovalRemembered: () => {
         void gw.request("approval.respond", { choice: "always" }).catch(() => {})
       },
@@ -194,7 +202,7 @@ export function useStream(c: Ctx) {
     flush()
     if (action.kind === "error") x.setErrorPulse(true)
     x.dispatch(action)
-  }, [gw, dialog, toast, flush, bg])
+  }, [gw, dialog, toast, flush, bg, retitle])
 
   useGatewayEvent(handle)
 
