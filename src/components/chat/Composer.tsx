@@ -17,6 +17,7 @@ import { acceptCompletion, useCompletion } from "../../app/useCompletion"
 import { frecency } from "../../app/frecency"
 import { useInputHistory, type HistEntry } from "../../app/useInputHistory"
 import { useBackground } from "../../app/background"
+import type { VerificationModel } from "../../app/verification"
 import { PartsBuffer, styles as partStyles, type Part, type FilePart } from "../../app/parts"
 import { SlashPopover } from "./SlashPopover"
 import { AtRefPopover } from "./AtRefPopover"
@@ -58,6 +59,7 @@ type Props = {
   streaming: boolean
   status?: string
   model?: string
+  verification?: VerificationModel | null
   /** Set for ~5s after the first Esc of the interrupt double-tap. */
   escHint?: boolean
   queue?: ReadonlyArray<string>
@@ -397,6 +399,11 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
     : props.streaming ? (props.status || "Generating...")
     : "Ready"
   const dot = props.ready ? (props.streaming ? theme.warning : theme.success) : theme.error
+  const vf = props.verification
+  const vfFg = vf?.tone === "ok" ? theme.success
+    : vf?.tone === "err" ? theme.error
+    : vf?.tone === "warn" ? theme.warning
+    : theme.textMuted
 
   // Logical-line row count (wrap-induced growth ignored; yoga sizes the
   // textarea, this only positions the absolute popover above the border).
@@ -558,6 +565,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
         ) : null}
         {bg.count > 0 ? <text fg={theme.text}>▶ {bg.count}  </text> : null}
         {bits.length > 0 ? <text fg={theme.textMuted}>{trunc(bits.join(" · "), 56)}  </text> : null}
+        {vf ? <text fg={vfFg}>{vf.glyph} {trunc(vf.detail, 42)}  </text> : null}
         {props.model ? <text fg={theme.textMuted}>{props.model}</text> : null}
       </box>
     </box>
