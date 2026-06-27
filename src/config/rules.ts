@@ -51,7 +51,7 @@ export const RULES: Record<string, Rule> = {
   "agent.gateway_timeout_warning": nonNeg,
   "agent.gateway_notify_interval": nonNeg,
   "agent.restart_drain_timeout": nonNeg,
-  "delegation.child_timeout_seconds": int(30, 86400),
+  "delegation.child_timeout_seconds": raw => raw === "0" ? null : int(30, 86400)(raw),
   "browser.command_timeout": int(1, 600),
   "approvals.timeout": int(1, 3600),
   "security.tirith_timeout": int(1, 120),
@@ -65,6 +65,7 @@ export const RULES: Record<string, Rule> = {
 
   // enums the schema doesn't carry
   "agent.service_tier": oneOf("", "fast", "standard"),
+  "agent.verify_on_stop": oneOf("auto", "true", "false"),
   "display.busy_input_mode": oneOf("queue", "steer", "interrupt"),
   "display.details_mode": oneOf("hidden", "collapsed", "expanded"),
   "display.thinking_mode": oneOf("collapsed", "truncated", "full"),

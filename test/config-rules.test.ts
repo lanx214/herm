@@ -34,6 +34,10 @@ describe("rules", () => {
   test("oneOf enums", () => {
     expect(check("display.busy_input_mode", "queue")).toBeNull()
     expect(check("display.busy_input_mode", "panic")).toMatch(/one of/)
+    expect(check("agent.verify_on_stop", "auto")).toBeNull()
+    expect(check("agent.verify_on_stop", "true")).toBeNull()
+    expect(check("agent.verify_on_stop", "false")).toBeNull()
+    expect(check("agent.verify_on_stop", "yes")).toMatch(/one of/)
     expect(check("logging.level", "DEBUG")).toBeNull()
     expect(check("logging.level", "TRACE")).toMatch(/one of/)
   })

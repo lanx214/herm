@@ -21,6 +21,14 @@ describe("config/index", () => {
     expect(other.set).toBe(false)
   })
 
+  test("verify_on_stop accepts auto and legacy booleans through select options", () => {
+    const fs = buildFields({ agent: { verify_on_stop: true } })
+    const f = fs.find(x => x.key === "agent.verify_on_stop")!
+    expect(f.type).toBe("select")
+    expect(f.value).toBe(true)
+    expect(f.options).toEqual(["auto", "true", "false"])
+  })
+
   test("list/dict schema keys classify as readonly", () => {
     const fs = buildFields({})
     expect(fs.find(x => x.key === "terminal.docker_volumes")!.type).toBe("readonly")

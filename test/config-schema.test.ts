@@ -64,4 +64,16 @@ describe("schema", () => {
     expect(SCHEMA["agent.gateway_timeout"].doc.length).toBeGreaterThan(20)
     expect(SCHEMA["compression.threshold"].doc.length).toBeGreaterThan(5)
   })
+
+  test("verify_on_stop carries auto default semantics", () => {
+    expect(SCHEMA["agent.verify_on_stop"]).toMatchObject({
+      type: "str",
+      default: "auto",
+      group: "agent",
+      effect: "session",
+    })
+    expect(SCHEMA["agent.verify_on_stop"].doc).toContain("interactive coding surfaces")
+    expect(SCHEMA["agent.verify_on_stop"].doc).toContain("conversational messaging surfaces")
+    expect(SCHEMA["agent.verify_on_stop"].doc).toContain("Set true or false")
+  })
 })

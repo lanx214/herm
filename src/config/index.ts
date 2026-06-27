@@ -26,6 +26,7 @@ const SELECTS: Record<string, string[]> = {
   "display.skin": [...SKINS],
   "logging.level": ["DEBUG", "INFO", "WARNING", "ERROR"],
   "agent.reasoning_effort": ["", "none", "minimal", "low", "medium", "high", "xhigh"],
+  "agent.verify_on_stop": ["auto", "true", "false"],
   "display.busy_input_mode": ["queue", "steer", "interrupt"],
   "display.details_mode": ["hidden", "collapsed", "expanded"],
   "display.thinking_mode": ["collapsed", "truncated", "full"],
@@ -119,7 +120,9 @@ const MERGE: Record<string, string> = {
   model_catalog: "general", onboarding: "general",
   human_delay: "display", dashboard: "display", gateway: "display",
   tool_output: "agent", prompt_caching: "compression", code_execution: "terminal",
-  lsp: "agent", x_search: "agent", tools: "agent", streaming: "display",
+  computer_use: "terminal", goals: "agent", lsp: "agent", moa: "agent",
+  tool_loop_guardrails: "agent", voice: "display", web: "agent",
+  x_search: "agent", tools: "agent", streaming: "display",
   slack: "platforms", telegram: "platforms", mattermost: "platforms",
   discord: "platforms", whatsapp: "platforms", matrix: "platforms",
 }
