@@ -60,7 +60,11 @@ export type Task = {
   model_override: string | null
   session_id: string | null
   last_heartbeat_at: number | null
+  block_kind: BlockKind | null
+  block_recurrences: number
 }
+
+export type BlockKind = "dependency" | "needs_input" | "capability" | "transient"
 
 export type Run = {
   id: number; profile: string | null
@@ -483,8 +487,14 @@ const taskColumns = (have: Set<string>): string => [
   selectCol(have, "max_retries"),
   selectCol(have, "model_override"), selectCol(have, "session_id"),
   selectCol(have, "last_heartbeat_at"),
+  selectCol(have, "block_kind"), selectCol(have, "block_recurrences"),
   `${AT} AS updated_at`,
 ].join(", ")
+
+const BLOCK_KINDS = new Set<BlockKind>(["dependency", "needs_input", "capability", "transient"])
+
+const parseKind = (raw: unknown): BlockKind | null =>
+  typeof raw === "string" && BLOCK_KINDS.has(raw as BlockKind) ? raw as BlockKind : null
 
 const parseSkills = (raw: unknown): string[] => {
   if (typeof raw !== "string" || !raw) return []
@@ -516,6 +526,8 @@ const toTask = (r: Record<string, unknown>): Task => ({
   model_override: (r.model_override as string) ?? null,
   session_id: (r.session_id as string) ?? null,
   last_heartbeat_at: (r.last_heartbeat_at as number) ?? null,
+  block_kind: parseKind(r.block_kind),
+  block_recurrences: Math.max(0, Number(r.block_recurrences) || 0),
 })
 
 const toRun = (r: Record<string, unknown>): Run => ({
