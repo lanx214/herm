@@ -59,6 +59,7 @@ import type { Source } from "../service/hermes-home"
 
 type Sh = { stdout: string; stderr: string; code: number }
 type Tier = "head" | "filter" | "grid" | "pane"
+type BlockSupport = "unknown" | "yes" | "no"
 
 // Column scrollbars hidden — the column border + ↑↓ are enough
 // signal at kanban card density; the bar steals a col per status.
@@ -211,6 +212,16 @@ const cardMark = (t: Pick<Task, "block_kind" | "block_recurrences">): string => 
 const statusText = (t: Task): string => {
   const block = blockText(t)
   return block ? `${t.status} · ${block}` : t.status
+}
+
+const supportsKind = (r: Sh): boolean =>
+  r.code === 0 && /--kind\b/.test(r.stdout)
+
+const unsupportedKind = (r: Sh): boolean => {
+  const s = `${r.stderr}\n${r.stdout}`.toLowerCase()
+  return r.code !== 0 && s.includes("--kind")
+    && (s.includes("unrecognized") || s.includes("no such option")
+      || s.includes("unknown option") || s.includes("invalid option"))
 }
 
 const Card = memo((p: {
@@ -721,6 +732,7 @@ export const Kanban = memo((props: { focused?: boolean }) => {
   const [chip, setChip] = useState(0)
   const [paneSel, setPaneSel] = useState(0)
   const [pane, setPane] = useState<Pane | null>(null)
+  const [blocks, setBlocks] = useState<Map<string, BlockSupport>>(() => new Map())
 
   const outer = useRef<ScrollBoxRenderable | null>(null)
 
@@ -839,6 +851,43 @@ export const Kanban = memo((props: { focused?: boolean }) => {
       return r.stdout
     }).catch((e: Error) => void toast.show({ variant: "error", message: trunc(e.message, 120) })),
   [gw, toast, load, at])
+
+  const blockSupport = useCallback(async (s: string): Promise<BlockSupport> => {
+    const cur = blocks.get(s)
+    if (cur === "yes" || cur === "no") return cur
+    const next = await gw.request<Sh>("shell.exec", { command: `hermes kanban --board ${q(s)} block --help` })
+      .then(r => supportsKind(r) ? "yes" as const : "no" as const)
+      .catch(() => "no" as const)
+    setBlocks(m => {
+      const out = new Map(m)
+      out.set(s, next)
+      return out
+    })
+    return next
+  }, [blocks, gw])
+
+  const runBlock = useCallback((t: Task, reason: string | null, kind: string) => {
+    const slug = live.current.at
+    const arg = reason ? ` ${q(reason)}` : ""
+    const suffix = kind ? ` --kind ${q(kind)}` : ""
+    const ok = kind === "dependency" ? `Dependency-wait ${t.id}` : `Blocked ${t.id}`
+    return gw.request<Sh>("shell.exec", { command: `hermes kanban --board ${q(slug)} block ${q(t.id)}${arg}${suffix}` })
+      .then(r => {
+        if (unsupportedKind(r) && kind) {
+          setBlocks(m => {
+            const out = new Map(m)
+            out.set(slug, "no")
+            return out
+          })
+          throw new Error("active Hermes CLI does not support typed block kinds; choose generic block")
+        }
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout || `exit ${r.code}`).trim())
+        toast.show({ variant: "success", message: ok })
+        resetKanban()
+        load()
+        return r.stdout
+      }).catch((e: Error) => void toast.show({ variant: "error", message: trunc(e.message, 120) }))
+  }, [gw, toast, load])
 
   // Direct bun:sqlite patch — title/body/priority only. Mirrors
   // dashboard PATCH /tasks/:id. Refreshes on success (no shell round-trip).
@@ -1117,28 +1166,33 @@ export const Kanban = memo((props: { focused?: boolean }) => {
   }, [dialog, sh, toast])
 
   const block = useCallback((t: Task) => {
-    const opts: Array<{ title: string; value: string; description?: string }> = [
-      { title: "generic", value: "", description: "legacy block without --kind" },
-      { title: "needs input", value: "needs_input", description: "human answer required" },
-      { title: "dependency", value: "dependency", description: "wait in todo until parents finish" },
-      { title: "capability", value: "capability", description: "missing tool, credential, or profile capability" },
-      { title: "transient", value: "transient", description: "temporary/flaky condition" },
-    ]
-    dialog.replace(
-      <DialogSelect title={`Block kind for ${t.id}`} options={opts}
-        current={t.block_kind ?? ""} filterable={false}
-        onSelect={async o => {
-          dialog.clear()
-          const r = await openTextPrompt(dialog, {
-            title: `Block ${t.id}`, label: "Reason (optional, posted as comment)",
-          })
-          const arg = r ? ` ${q(r)}` : ""
-          const kind = o.value ? ` --kind ${q(o.value)}` : ""
-          void sh(`block ${q(t.id)}${arg}${kind}`,
-            o.value === "dependency" ? `Dependency-wait ${t.id}` : `Blocked ${t.id}`)
-        }} />,
-    )
-  }, [dialog, sh])
+    void blockSupport(live.current.at).then(support => {
+      if (support === "no") {
+        return openTextPrompt(dialog, {
+          title: `Block ${t.id}`,
+          label: "Reason (optional; generic block — active CLI has no --kind)",
+        }).then(r => { if (r !== null) void runBlock(t, r, "") })
+      }
+      const opts: Array<{ title: string; value: string; description?: string }> = [
+        { title: "generic", value: "", description: "legacy block without --kind" },
+        { title: "needs input", value: "needs_input", description: "human answer required" },
+        { title: "dependency", value: "dependency", description: "wait in todo until parents finish" },
+        { title: "capability", value: "capability", description: "missing tool, credential, or profile capability" },
+        { title: "transient", value: "transient", description: "temporary/flaky condition" },
+      ]
+      dialog.replace(
+        <DialogSelect title={`Block kind for ${t.id}`} options={opts}
+          current={t.block_kind ?? ""} filterable={false}
+          onSelect={async o => {
+            dialog.clear()
+            const r = await openTextPrompt(dialog, {
+              title: `Block ${t.id}`, label: "Reason (optional, posted as comment)",
+            })
+            if (r !== null) void runBlock(t, r, o.value)
+          }} />,
+      )
+    })
+  }, [dialog, blockSupport, runBlock])
 
   const editStatus = useCallback((t: Task) => {
     // Only expose transitions the CLI has verbs for. 'unblock' covers

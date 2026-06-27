@@ -548,10 +548,16 @@ describe("Kanban tab", () => {
     t.destroy()
   })
 
-  test("status editor block path passes typed --kind", async () => {
+  test("status editor uses typed --kind when active CLI supports it", async () => {
     const cmds: string[] = []
     const gw = new MockGateway({
-      "shell.exec": p => { if (!/\bdiagnostics\b/.test(p.command as string)) cmds.push(p.command as string); return { stdout: "", stderr: "", code: 0 } },
+      "shell.exec": p => {
+        const cmd = p.command as string
+        if (/\bdiagnostics\b/.test(cmd)) return { stdout: "", stderr: "", code: 0 }
+        cmds.push(cmd)
+        if (/\bblock --help$/.test(cmd)) return { stdout: "usage: hermes kanban block [--kind KIND]", stderr: "", code: 0 }
+        return { stdout: "", stderr: "", code: 0 }
+      },
     })
     const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
     try {
@@ -571,12 +577,95 @@ describe("Kanban tab", () => {
       act(() => t.keys.pressArrow("down")); await t.settle()
       act(() => t.keys.pressEnter())
       await until(t, () => t.frame().includes("Block kind for t1"))
+      act(() => t.keys.pressArrow("down")); await t.settle()
       act(() => t.keys.pressEnter())
       await until(t, () => t.frame().includes("Block t1"))
       await act(async () => { await t.keys.typeText("need answer") })
       act(() => t.keys.pressEnter())
-      await until(t, () => cmds.length === 1)
-      expect(cmds[0]).toBe("hermes kanban --board default block t1 'need answer' --kind needs_input")
+      await until(t, () => cmds.length === 2)
+      expect(cmds[0]).toBe("hermes kanban --board default block --help")
+      expect(cmds[1]).toBe("hermes kanban --board default block t1 'need answer' --kind needs_input")
+    } finally {
+      t.destroy()
+    }
+  })
+
+  test("status editor falls back to generic block when active CLI lacks --kind", async () => {
+    const cmds: string[] = []
+    const gw = new MockGateway({
+      "shell.exec": p => {
+        const cmd = p.command as string
+        if (/\bdiagnostics\b/.test(cmd)) return { stdout: "", stderr: "", code: 0 }
+        cmds.push(cmd)
+        if (/\bblock --help$/.test(cmd)) return { stdout: "usage: hermes kanban block task_id [reason ...] [--ids IDS]", stderr: "", code: 0 }
+        return { stdout: "", stderr: "", code: 0 }
+      },
+    })
+    const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
+    try {
+      await until(t, () => t.frame().includes("Kanban · 3 boards"))
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => /Status\s+ready/.test(t.frame()))
+      act(() => t.keys.pressTab()); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => t.frame().includes("Status for t1"))
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => t.frame().includes("generic block"))
+      await act(async () => { await t.keys.typeText("need answer") })
+      act(() => t.keys.pressEnter())
+      await until(t, () => cmds.length === 2)
+      expect(cmds[0]).toBe("hermes kanban --board default block --help")
+      expect(cmds[1]).toBe("hermes kanban --board default block t1 'need answer'")
+    } finally {
+      t.destroy()
+    }
+  })
+
+  test("status editor sends dependency kind when active CLI supports typed blocks", async () => {
+    const cmds: string[] = []
+    const gw = new MockGateway({
+      "shell.exec": p => {
+        const cmd = p.command as string
+        if (/\bdiagnostics\b/.test(cmd)) return { stdout: "", stderr: "", code: 0 }
+        cmds.push(cmd)
+        if (/\bblock --help$/.test(cmd)) return { stdout: "usage: hermes kanban block [--kind KIND]", stderr: "", code: 0 }
+        return { stdout: "", stderr: "", code: 0 }
+      },
+    })
+    const t = await mountNode(<Kanban focused />, { gw, width: 180, height: 44 })
+    try {
+      await until(t, () => t.frame().includes("Kanban · 3 boards"))
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressArrow("right")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => /Status\s+ready/.test(t.frame()))
+      act(() => t.keys.pressTab()); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => t.frame().includes("Status for t1"))
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => t.frame().includes("Block kind for t1"))
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressArrow("down")); await t.settle()
+      act(() => t.keys.pressEnter())
+      await until(t, () => t.frame().includes("Block t1"))
+      await act(async () => { await t.keys.typeText("waiting on t3") })
+      act(() => t.keys.pressEnter())
+      await until(t, () => cmds.length === 2)
+      expect(cmds[1]).toBe("hermes kanban --board default block t1 'waiting on t3' --kind dependency")
     } finally {
       t.destroy()
     }
