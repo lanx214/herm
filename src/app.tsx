@@ -97,7 +97,10 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const [ready, setReady] = useState(false)
   const [sid, setSid] = useState("")
   const sidRef = useRef(sid); sidRef.current = sid
-  const capabilities = sessionCapabilities({ sid, ready, streaming: turn.streaming })
+  const [starting, setStarting] = useState(false)
+  const startRef = useRef(starting); startRef.current = starting
+  const active = turn.streaming || starting
+  const capabilities = sessionCapabilities({ sid, ready, streaming: active })
   const [tab, setTab] = useState(CHAT_TAB)
   // Sub-tab per group — Chat has none, so key 0 is unused.
   // Defensive clamp lives inside each group (SessionsGroup/Automation/
@@ -248,7 +251,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     ? "error"
     : turn.toolActive ? "working"
     : turn.streaming && turn.hasContent ? "speaking"
-    : turn.streaming ? "thinking"
+    : active ? "thinking"
     : composing ? "listening"
     : "idle"
 
@@ -335,9 +338,13 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
 
   const stream = useStream({
     dispatch, session, launchRef, sidRef, sessionStart, goalHook,
-    setSid, setInfo, setReady, setTitle, setBusy, setUsage, setStatus, setSkin, setErrorPulse, settle,
+    setSid, setInfo, setReady, setTitle, setBusy, setStarting, setUsage, setStatus, setSkin, setErrorPulse, settle,
   })
-  intr.current = stream.doInterrupt
+  const interrupt = useCallback(() => {
+    if (startRef.current && !turnRef.current.streaming) hold.current = true
+    stream.doInterrupt()
+  }, [stream.doInterrupt])
+  intr.current = interrupt
 
   const reset = useCallback(() => {
     stream.interrupted.current = false
@@ -347,6 +354,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     dispatch({ kind: "reset" })
     setUsage(undefined)
     setReady(false)
+    setStarting(false)
     setStatus("")
     setTitle("")
     setAttachments([])
@@ -617,9 +625,13 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     const withMedia = attachments.length
       ? [...attachments.flatMap(a => a.path ? [`MEDIA:${a.path}`] : []), text].filter(Boolean).join("\n")
       : text
-    gw.request("prompt.submit", { text })
-      .then(() => {
+    gw.request<{ status?: string }>("prompt.submit", { text })
+      .then(r => {
         dispatch({ kind: "user", text: withMedia })
+        if (r.status === "streaming" && !turnRef.current.streaming) {
+          setStarting(true)
+          setStatus("starting agent…")
+        }
         setAttachments([])
         undone.current = []
         setTab(CHAT_TAB)
@@ -638,6 +650,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
           return
         }
         inflight.current = false
+        setStarting(false)
         dispatch({ kind: "system", text: `submit failed: ${msg}` })
         toast.show({ variant: "error", message: msg })
       })
@@ -728,6 +741,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     subCount, cycleSub,
     focusRegion, setFocusRegion,
     streaming: turn.streaming,
+    starting,
     dialogOpen: dialog.open,
     composer,
     // Route keys to the pending inline prompt card before anything
@@ -741,13 +755,13 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       setSplash(false); summoned.current = false
       return true
     },
-    onInterrupt: stream.doInterrupt,
+    onInterrupt: interrupt,
     // queue.flush interrupts, then drain waits for session.info so
     // prompt.submit does not race the gateway's still-running turn.
     queued: queue.length,
     onFlushQueue: () => {
       hold.current = true
-      stream.doInterrupt()
+      interrupt()
     },
     onQuit: () => quit(renderer, sid, caption, gw),
     onQuitArm: (label) =>
@@ -791,11 +805,11 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     onVoiceRecord: () => voice.record(sidRef.current),
   })
   useBridge({
-    tab, ready, streaming: turn.streaming, messages: turn.messages, sid, focusRegion,
+    tab, ready, streaming: active, messages: turn.messages, sid, focusRegion,
     setTab, setFocusRegion, dispatch, composer,
   })
 
-  const contentFocused = focusRegion === "content" && !turn.streaming
+  const contentFocused = focusRegion === "content" && !active
   // At most one pending prompt (gateway blocks on the answer). The
   // card mounts inside MessageList; key routing and composer-defocus
   // live here because the shell owns both. `prompt` is computed above
@@ -883,7 +897,8 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
               <VoiceIndicator voice={voice.state} keyLabel={voice.keyLabel} />
               <Composer
                 ref={composer}
-                focused={inputFocused} canSubmitPrompt={capabilities.canSubmitPrompt} ready={ready} streaming={turn.streaming}
+                focused={inputFocused} canSubmitPrompt={capabilities.canSubmitPrompt} ready={ready} streaming={active}
+                starting={starting}
                 status={status}
                 model={info?.model}
                 hidden={hidden}
@@ -905,7 +920,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
             <Profiler id="sidebar" onRender={perf.onRender}>
               <Sidebar agentState={agentState} info={info} usage={usage} eikon={eikon} profile={activeProfileName()}
                        title={caption}
-                       cloud={tab === 0 && cloud} pulse={turn.streaming}
+                       cloud={tab === 0 && cloud} pulse={active}
                        onAvatar={onAvatar} onAvatarHold={onAvatarHold} />
             </Profiler>
           ) : null}
@@ -913,7 +928,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
         {plugins.has("app_bottom") ? (
           <box height={1} flexShrink={0} paddingX={1} overflow="hidden">
             <plugins.Slot name="app_bottom" mode="single_winner"
-                          sid={sid} tab={tab} streaming={turn.streaming} />
+                          sid={sid} tab={tab} streaming={active} />
           </box>
         ) : null}
       </box>

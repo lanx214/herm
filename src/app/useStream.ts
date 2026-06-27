@@ -32,6 +32,7 @@ type Ctx = {
   setReady: (r: boolean) => void
   setTitle: (t: string) => void
   setBusy: (m: "queue" | "steer" | "interrupt") => void
+  setStarting: (v: boolean) => void
   setUsage: (u: Usage | undefined) => void
   setStatus: (s: string) => void
   setSkin: (s: SkinState) => void
@@ -133,6 +134,10 @@ export function useStream(c: Ctx) {
       onSessionInfo: (si) => {
         x.setInfo(si)
         x.setReady(true)
+        if (si.running === false) {
+          x.setStarting(false)
+          x.setStatus("")
+        }
         if (si.session_id) x.setSid(si.session_id)
         x.settle()
         const bad = (si.mcp_servers ?? []).filter(s => !s.connected)
@@ -148,6 +153,7 @@ export function useStream(c: Ctx) {
       },
       onUsage: (u) => x.setUsage(u),
       onTurnComplete: () => {
+        x.setStarting(false)
         x.setStatus("")
         spawnHistory.flush(gw, x.sidRef.current)
         x.goalHook.check(x.sidRef.current)
@@ -192,6 +198,11 @@ export function useStream(c: Ctx) {
       return
     }
     flush()
+    if (action.kind === "message.start") {
+      x.setStarting(false)
+      x.setStatus("")
+    }
+    if (action.kind === "error") x.setStarting(false)
     if (action.kind === "error") x.setErrorPulse(true)
     x.dispatch(action)
   }, [gw, dialog, toast, flush, bg])

@@ -56,6 +56,7 @@ type Props = {
   canSubmitPrompt: boolean
   ready: boolean
   streaming: boolean
+  starting?: boolean
   status?: string
   model?: string
   /** Set for ~5s after the first Esc of the interrupt double-tap. */
@@ -394,6 +395,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
   }, [])
 
   const label = !props.ready ? "Connecting..."
+    : props.starting ? (props.status || "Starting agent...")
     : props.streaming ? (props.status || "Generating...")
     : "Ready"
   const dot = props.ready ? (props.streaming ? theme.warning : theme.success) : theme.error
@@ -546,6 +548,10 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
           <span fg={theme.textMuted}> {mode === "shell" ? "Shell" : label}</span>
           {mode === "shell"
             ? <span fg={theme.textMuted}>  esc exit shell mode</span>
+            : props.starting && props.escHint
+            ? <span fg={theme.warning}>  esc again to cancel</span>
+            : props.starting
+            ? <span fg={theme.textMuted}>  esc×2 cancel</span>
             : props.streaming && props.escHint
             ? <span fg={theme.warning}>  esc again to interrupt</span>
             : props.streaming
