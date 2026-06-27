@@ -132,6 +132,7 @@ export function useStream(c: Ctx) {
       },
       onSessionInfo: (si) => {
         x.setInfo(si)
+        if (si.usage) x.setUsage(si.usage)
         x.setReady(true)
         if (si.session_id) x.setSid(si.session_id)
         x.settle()

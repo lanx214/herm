@@ -886,6 +886,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
                 focused={inputFocused} canSubmitPrompt={capabilities.canSubmitPrompt} ready={ready} streaming={turn.streaming}
                 status={status}
                 model={info?.model}
+                subagents={usage?.active_subagents ?? info?.usage?.active_subagents}
                 hidden={hidden}
                 escHint={escHint}
                 queue={queue}

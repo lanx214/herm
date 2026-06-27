@@ -283,6 +283,7 @@ export type SessionUsageResponse = {
   cache_read?: number
   cache_write?: number
   reasoning?: number
+  active_subagents?: number
   cost_usd?: number
   cost_status?: "estimated" | "exact"
   context_used?: number

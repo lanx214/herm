@@ -58,6 +58,7 @@ type Props = {
   streaming: boolean
   status?: string
   model?: string
+  subagents?: number
   /** Set for ~5s after the first Esc of the interrupt double-tap. */
   escHint?: boolean
   queue?: ReadonlyArray<string>
@@ -397,6 +398,10 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
     : props.streaming ? (props.status || "Generating...")
     : "Ready"
   const dot = props.ready ? (props.streaming ? theme.warning : theme.success) : theme.error
+  const subagents = typeof props.subagents === "number" ? props.subagents : 0
+  const resume = subagents > 0 && !props.streaming
+    ? subagents === 1 ? "↩ resumes when subagent finishes" : `↩ resumes when ${subagents} subagents finish`
+    : undefined
 
   // Logical-line row count (wrap-induced growth ignored; yoga sizes the
   // textarea, this only positions the absolute popover above the border).
@@ -557,6 +562,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
           <text fg={theme.textMuted}>{keys.print("queue.flush")} to send queued now  </text>
         ) : null}
         {bg.count > 0 ? <text fg={theme.text}>▶ {bg.count}  </text> : null}
+        {resume ? <text fg={theme.textMuted}>{resume}  </text> : null}
         {bits.length > 0 ? <text fg={theme.textMuted}>{trunc(bits.join(" · "), 56)}  </text> : null}
         {props.model ? <text fg={theme.textMuted}>{props.model}</text> : null}
       </box>
