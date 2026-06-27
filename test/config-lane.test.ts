@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { buildFields } from "../src/config"
 import { route, toCliString, writeConfig, verifyWrite, maxEffect, RPC_ALIAS } from "../src/config/lane"
 
 type Call = { method: string; params: Record<string, unknown> }
@@ -123,6 +124,31 @@ describe("lane.verifyWrite", () => {
       { key: "agent.reasoning_effort", to: "high" },    // rpc lane → skipped
     ])
     expect(miss).toEqual(["compression.threshold"])
+  })
+
+  test("verify_on_stop writes and verifies auto plus boolean choices", async () => {
+    const cfg: { agent: { verify_on_stop?: unknown } } = { agent: {} }
+    const gw = mockGw({
+      "cli.exec": (p) => {
+        const argv = p.argv as string[]
+        if (argv[2] === "agent.verify_on_stop") {
+          cfg.agent.verify_on_stop = argv[3] === "auto" ? "auto" : argv[3] === "true"
+        }
+        return { blocked: false, code: 0, output: "✓" }
+      },
+      "config.get": () => ({ config: cfg }),
+    })
+
+    const field = buildFields({ agent: { verify_on_stop: true } })
+      .find(f => f.key === "agent.verify_on_stop")!
+
+    for (const val of field.options!) {
+      const diffs = [{ key: "agent.verify_on_stop", to: val }]
+      const res = await writeConfig(gw, diffs)
+      expect(res.failed).toEqual([])
+      expect(res.ok).toEqual(["agent.verify_on_stop"])
+      expect(await verifyWrite(gw, diffs)).toEqual([])
+    }
   })
 })
 

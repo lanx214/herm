@@ -14,19 +14,19 @@ export type Field = {
   set: boolean
   doc: string
   effect: ConfigEffect
-  options?: string[]
+  options?: (string | boolean)[]
 }
 
 // Enum-valued string fields the schema doesn't carry options for.
 // Kept minimal — most enums are validated by rules.ts on commit; these
 // are the ones worth cycling with [h/l] instead of free-typing.
-const SELECTS: Record<string, string[]> = {
+const SELECTS: Record<string, (string | boolean)[]> = {
   "terminal.backend": ["local", "docker", "ssh", "modal", "daytona", "singularity", "vercel_sandbox"],
   "tts.provider": ["edge", "elevenlabs", "openai", "neutts", "xai", "mistral"],
   "display.skin": [...SKINS],
   "logging.level": ["DEBUG", "INFO", "WARNING", "ERROR"],
   "agent.reasoning_effort": ["", "none", "minimal", "low", "medium", "high", "xhigh"],
-  "agent.verify_on_stop": ["auto", "true", "false"],
+  "agent.verify_on_stop": ["auto", true, false],
   "display.busy_input_mode": ["queue", "steer", "interrupt"],
   "display.details_mode": ["hidden", "collapsed", "expanded"],
   "display.thinking_mode": ["collapsed", "truncated", "full"],

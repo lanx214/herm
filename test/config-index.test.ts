@@ -26,7 +26,7 @@ describe("config/index", () => {
     const f = fs.find(x => x.key === "agent.verify_on_stop")!
     expect(f.type).toBe("select")
     expect(f.value).toBe(true)
-    expect(f.options).toEqual(["auto", "true", "false"])
+    expect(f.options).toEqual(["auto", true, false])
   })
 
   test("list/dict schema keys classify as readonly", () => {
