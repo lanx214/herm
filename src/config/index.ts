@@ -14,13 +14,13 @@ export type Field = {
   set: boolean
   doc: string
   effect: ConfigEffect
-  options?: string[]
+  options?: unknown[]
 }
 
 // Enum-valued string fields the schema doesn't carry options for.
 // Kept minimal — most enums are validated by rules.ts on commit; these
 // are the ones worth cycling with [h/l] instead of free-typing.
-const SELECTS: Record<string, string[]> = {
+const SELECTS: Record<string, unknown[]> = {
   "terminal.backend": ["local", "docker", "ssh", "modal", "daytona", "singularity", "vercel_sandbox"],
   "tts.provider": ["edge", "elevenlabs", "openai", "neutts", "xai", "mistral"],
   "display.skin": [...SKINS],
@@ -35,6 +35,7 @@ const SELECTS: Record<string, string[]> = {
   "streaming.transport": ["auto", "draft", "edit", "off"],
   "tools.tool_search.enabled": ["auto", "on", "off"],
   "updates.non_interactive_local_changes": ["stash", "discard"],
+  "agent.verify_on_stop": [false, true, "auto"],
 }
 
 const get = (obj: Record<string, unknown>, path: string): unknown => {
@@ -116,10 +117,10 @@ export const buildFields = (user: Record<string, unknown>): Field[] => {
 const MERGE: Record<string, string> = {
   approvals: "security", privacy: "security", secrets: "security",
   checkpoints: "agent", context: "agent", cron: "agent", network: "agent",
-  model_catalog: "general", onboarding: "general",
+  model_catalog: "general", onboarding: "general", moa: "agent", web: "agent",
   human_delay: "display", dashboard: "display", gateway: "display",
   tool_output: "agent", prompt_caching: "compression", code_execution: "terminal",
-  lsp: "agent", x_search: "agent", tools: "agent", streaming: "display",
+  lsp: "agent", x_search: "agent", tools: "agent", streaming: "display", computer_use: "terminal",
   slack: "platforms", telegram: "platforms", mattermost: "platforms",
   discord: "platforms", whatsapp: "platforms", matrix: "platforms",
 }

@@ -463,7 +463,7 @@ export const Config = memo((props: { focused?: boolean }) => {
     if (matched || !f || !writable) return;
 
     if (f.type === "select" && f.options) {
-      const idx = f.options.indexOf(String(f.value));
+      const idx = f.options.findIndex(o => String(o) === String(f.value));
       if (key.raw === "l" || key.raw === "]") {
         update(f.key, f.options[(idx + 1) % f.options.length]);
         return;

@@ -55,6 +55,7 @@ export const route = (key: string): Lane => {
 
 export const toCliString = (key: string, v: unknown): string => {
   const t: ConfigSchemaEntry["type"] = SCHEMA[key]?.type ?? "str"
+  if (key === "agent.verify_on_stop" && v === "auto") return "auto"
   if (t === "bool") return v ? "true" : "false"
   if (t === "int") return String(Math.trunc(Number(v)))
   if (t === "float") return String(Number(v))

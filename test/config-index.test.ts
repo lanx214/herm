@@ -28,6 +28,18 @@ describe("config/index", () => {
     expect(fs.find(x => x.key === "agent.max_turns")!.type).toBe("number")
   })
 
+  test("verify_on_stop keeps upstream false default plus explicit auto sentinel", () => {
+    const def = buildFields({}).find(x => x.key === "agent.verify_on_stop")!
+    expect(def.type).toBe("select")
+    expect(def.value).toBe(false)
+    expect(def.options).toEqual([false, true, "auto"])
+
+    const set = buildFields({ agent: { verify_on_stop: "auto" } })
+      .find(x => x.key === "agent.verify_on_stop")!
+    expect(set.set).toBe(true)
+    expect(set.value).toBe("auto")
+  })
+
   test("unknown user key surfaces as an extra field", () => {
     const fs = buildFields({ mystery: { flag: true } })
     const f = fs.find(x => x.key === "mystery.flag")

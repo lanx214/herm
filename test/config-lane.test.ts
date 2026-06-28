@@ -61,6 +61,11 @@ describe("lane.toCliString", () => {
   test("str passes raw (no numeric coercion in herm)", () => {
     expect(toCliString("terminal.docker_image", "python:3.11")).toBe("python:3.11")
   })
+  test("verify_on_stop preserves explicit auto sentinel", () => {
+    expect(toCliString("agent.verify_on_stop", "auto")).toBe("auto")
+    expect(toCliString("agent.verify_on_stop", true)).toBe("true")
+    expect(toCliString("agent.verify_on_stop", false)).toBe("false")
+  })
 })
 
 describe("lane.writeConfig", () => {
