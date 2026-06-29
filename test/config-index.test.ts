@@ -56,6 +56,13 @@ describe("config/index", () => {
       expect(GROUPS.includes(groupOf(k)), `${k} → ${groupOf(k)}`).toBe(true)
   })
 
+  test("new upstream groups merge into existing config categories", () => {
+    expect(groupOf("desktop.disable_gpu")).toBe("display")
+    expect(groupOf("desktop.electron_flags")).toBe("display")
+    expect(groupOf("computer_use.cua_telemetry")).toBe("agent")
+    expect(groupOf("moa.default_preset")).toBe("agent")
+  })
+
   test("sections: single raw group → one headless chunk", () => {
     const fs = buildFields({}).filter(f => groupOf(f.key) === "logging")
     const s = sections("logging", fs)

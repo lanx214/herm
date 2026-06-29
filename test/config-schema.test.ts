@@ -40,6 +40,34 @@ describe("schema", () => {
     expect(SCHEMA["kanban.max_in_progress_per_profile"].doc).toContain("positive int")
   })
 
+  test("upstream config parity keys are present", () => {
+    expect(SCHEMA["agent.intent_ack_continuation"]).toMatchObject({
+      type: "str",
+      default: "auto",
+      group: "agent",
+    })
+    expect(SCHEMA["agent.clarify_timeout"]).toMatchObject({
+      type: "int",
+      default: 3600,
+      group: "agent",
+    })
+    expect(SCHEMA["agent.restart_drain_timeout"]).toMatchObject({
+      type: "int",
+      default: 0,
+      group: "agent",
+    })
+    expect(SCHEMA["desktop.electron_flags"]).toMatchObject({
+      type: "list",
+      default: [],
+      group: "desktop",
+    })
+    expect(SCHEMA["desktop.disable_gpu"]).toMatchObject({
+      type: "str",
+      default: "auto",
+      group: "desktop",
+    })
+  })
+
   test("group is first dotted segment (or 'general' for root keys)", () => {
     for (const k of SCHEMA_KEYS) {
       const want = k.includes(".") ? k.split(".")[0] : "general"
