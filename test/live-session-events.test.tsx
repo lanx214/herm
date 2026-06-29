@@ -58,6 +58,39 @@ describe("live session event routing", () => {
     t.destroy()
   })
 
+  test("renders MoA references before aggregator answer without aggregating rows", async () => {
+    const gw = new MockGateway({
+      "session.resume": p => ({ session_id: p.session_id, messages: [] }),
+    })
+    const t = await mount({ gw, launch: { mode: "resume", sid: "sid-b", splash: false } })
+    await until(t, () => t.frame().includes("Ready"))
+
+    await act(async () => {
+      t.gw.push({ type: "message.start", session_id: "sid-b" })
+      t.gw.push({
+        type: "moa.reference",
+        session_id: "sid-b",
+        payload: { label: "openrouter:openai/gpt-5.5", text: "Paris.", index: 1, count: 2 },
+      })
+      t.gw.push({
+        type: "moa.aggregating",
+        session_id: "sid-b",
+        payload: { aggregator: "openrouter:anthropic/claude-opus-4.8" },
+      })
+      t.gw.push({ type: "message.delta", session_id: "sid-b", payload: { text: "The answer is Paris." } })
+      t.gw.push({ type: "message.complete", session_id: "sid-b" })
+    })
+    await until(t, () => t.frame().includes("The answer is Paris."))
+
+    const frame = t.frame()
+    expect(frame).toContain("◇ Reference 1/2 — openrouter:openai/gpt-5.5")
+    expect(frame).toContain("Paris.")
+    expect(frame.indexOf("◇ Reference 1/2")).toBeLessThan(frame.indexOf("The answer is Paris."))
+    expect(frame).not.toContain("aggregating with")
+    expect(frame).not.toContain("openrouter:anthropic/claude-opus-4.8")
+    t.destroy()
+  })
+
   test("sibling background completion clears badge without writing into active transcript", async () => {
     const gw = new MockGateway({
       "commands.catalog": () => ({ pairs: [["/background", "run in background"]] }),

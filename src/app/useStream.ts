@@ -45,6 +45,7 @@ type Ctx = {
 const STREAM_EVENTS = new Set<GatewayEvent["type"]>([
   "message.start",
   "message.delta", "reasoning.delta", "reasoning.available", "thinking.delta",
+  "moa.reference", "moa.aggregating",
   "tool.start", "tool.progress", "tool.generating",
 ])
 const TITLE_DELAYS = [1200, 5000, 15000, 30000] as const

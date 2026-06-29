@@ -30,6 +30,12 @@ function count(o: Record<string, string[]> | undefined): number {
   return o ? Object.values(o).reduce((n, v) => n + v.length, 0) : 0
 }
 
+function reference(label: string, text: string, index: number | undefined, count: number | undefined): string {
+  const head = index && count ? `◇ Reference ${index}/${count} — ${label}` : `◇ Reference — ${label}`
+  const body = text.trim()
+  return body ? `${head}\n${body}` : head
+}
+
 export function formatProcessNotification(text: string): string {
   const body = text.replace(/^\[IMPORTANT: /, "").replace(/\]$/, "")
   const done = body.match(/^Background process (\S+) completed \(exit code (\S+)\)\.\nCommand: (.+?)(?:\n|$)/)
@@ -121,6 +127,23 @@ export function mapEvent(ev: GatewayEvent, side: Side): Action | null {
       const text = ev.payload?.text
       if (!text) return null
       return { kind: "thinking", text, final: ev.type === "reasoning.available", verbose: ev.payload?.verbose }
+    }
+
+    case "moa.reference":
+      return {
+        kind: "reference",
+        text: reference(
+          ev.payload?.label ?? "reference",
+          ev.payload?.text ?? "",
+          ev.payload?.index,
+          ev.payload?.count,
+        ),
+      }
+
+    case "moa.aggregating": {
+      const agg = ev.payload?.aggregator
+      side.onStatus?.(agg ? `aggregating with ${agg}…` : "aggregating…")
+      return null
     }
 
     case "subagent.start":

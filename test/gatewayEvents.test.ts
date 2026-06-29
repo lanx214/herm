@@ -165,6 +165,22 @@ describe("mapEvent", () => {
       .toEqual({ kind: "thinking", text: "done", final: true, verbose: true })
   })
 
+  test("moa.reference maps to a visible committed reference block", () => {
+    expect(map({
+      type: "moa.reference",
+      payload: { label: "openrouter:openai/gpt-5.5", text: "Paris.", index: 1, count: 2 },
+    }).action).toEqual({
+      kind: "reference",
+      text: "◇ Reference 1/2 — openrouter:openai/gpt-5.5\nParis.",
+    })
+  })
+
+  test("moa.aggregating is transient status only", () => {
+    const r = map({ type: "moa.aggregating", payload: { aggregator: "openrouter:anthropic/claude-opus-4.8" } })
+    expect(r.action).toBeNull()
+    expect(r.calls.status).toEqual(["aggregating with openrouter:anthropic/claude-opus-4.8…"])
+  })
+
   test("request events return prompt actions (no side callback)", () => {
     expect(map({ type: "clarify.request", payload: { request_id: "x", question: "?", choices: null } }).action)
       .toEqual({ kind: "prompt", id: "x", req: { variant: "clarify", request_id: "x", question: "?", choices: null } })

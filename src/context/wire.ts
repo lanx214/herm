@@ -30,6 +30,8 @@ export type GatewayEvent = ({
   | { type: "thinking.delta"; payload?: { text?: string } }
   | { type: "reasoning.delta"; payload?: { text?: string; verbose?: boolean } }
   | { type: "reasoning.available"; payload?: { text?: string; verbose?: boolean } }
+  | { type: "moa.reference"; payload?: { label?: string; text?: string; index?: number; count?: number } }
+  | { type: "moa.aggregating"; payload?: { aggregator?: string } }
   | { type: "status.update"; payload?: { text?: string; kind?: string } }
   | { type: "notification.show"; payload?: NotificationShowPayload }
   | { type: "notification.clear"; payload?: NotificationClearPayload }
