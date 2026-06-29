@@ -227,12 +227,35 @@ export const sortDiags = (ds: Diag[]): Diag[] =>
 const DEFAULT = "default"
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
 const DEFAULT_BUSY_TIMEOUT_MS = 120_000
+const BUSY_RETRIES = 5
+const BUSY_MIN_MS = 20
+const BUSY_MAX_MS = 150
 
 const busyTimeoutMs = (): number => {
   const raw = (process.env.HERMES_KANBAN_BUSY_TIMEOUT_MS ?? "").trim()
   if (!raw) return DEFAULT_BUSY_TIMEOUT_MS
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_BUSY_TIMEOUT_MS
+}
+
+const isBusy = (err: unknown): boolean => {
+  const msg = String((err as Error)?.message ?? err).toLowerCase()
+  return msg.includes("database is locked") || msg.includes("database is busy")
+}
+
+const nap = () => {
+  const ms = BUSY_MIN_MS + Math.random() * (BUSY_MAX_MS - BUSY_MIN_MS)
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+const boundary = (conn: Pick<Database, "exec">, sql: "BEGIN IMMEDIATE" | "COMMIT") => {
+  for (let i = 0; i <= BUSY_RETRIES; i++) {
+    try { conn.exec(sql); return }
+    catch (err) {
+      if (!isBusy(err) || i === BUSY_RETRIES) throw err
+      nap()
+    }
+  }
 }
 
 /** Shared Hermes root for kanban paths — mirrors upstream
@@ -770,16 +793,22 @@ function checkFileLength(conn: Database) {
  *  kanban_db.write_txn — IMMEDIATE takes the reserved lock up front so
  *  concurrent writers fail fast instead of racing mid-txn. */
 function writeTxn<T>(conn: Database, fn: () => T): T {
-  conn.exec("BEGIN IMMEDIATE")
+  boundary(conn, "BEGIN IMMEDIATE")
+  const out = (() => {
+    try { return fn() }
+    catch (err) {
+      try { conn.exec("ROLLBACK") } catch {}
+      throw err
+    }
+  })()
   try {
-    const out = fn()
-    conn.exec("COMMIT")
-    checkFileLength(conn)
-    return out
+    boundary(conn, "COMMIT")
   } catch (err) {
     try { conn.exec("ROLLBACK") } catch {}
     throw err
   }
+  checkFileLength(conn)
+  return out
 }
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -848,5 +877,7 @@ export const tailLog = (id: string, bytes?: number) => tailLogOf(slug, id, bytes
  *  and toast messages readable for plain ids). */
 export const q = (s: string): string =>
   /^[A-Za-z0-9._\/:+=-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
+
+export const internals = { writeTxn }
 
 export * as Kanban from "./hermes-kanban"

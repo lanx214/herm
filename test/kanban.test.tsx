@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterEach } from "bun:test"
+import { describe, test, expect, beforeAll, afterEach, spyOn } from "bun:test"
 import { act } from "react"
 import { Database } from "bun:sqlite"
 import { mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs"
@@ -1298,6 +1298,78 @@ describe("patchTask direct writes", () => {
     const { patchTask } = await import("../src/service/hermes-kanban")
     expect(() => patchTask("default", "t4", { title: "   " })).toThrow(/empty/)
     expect(patchTask("default", "does-not-exist", { title: "x" })).toBe(false)
+  })
+
+  test("BEGIN IMMEDIATE retries transient BUSY before running body", async () => {
+    const { internals } = await import("../src/service/hermes-kanban")
+    const waits: number[] = []
+    const wait = spyOn(Atomics, "wait").mockImplementation(((arr: Int32Array, idx: number, val: number, timeout?: number) => {
+      void arr; void idx; void val
+      waits.push(Number(timeout))
+      return "timed-out"
+    }) as never)
+    let body = 0
+    const sqls: string[] = []
+    const conn = {
+      exec(sql: string) {
+        sqls.push(sql)
+        if (sql === "BEGIN IMMEDIATE" && sqls.filter(s => s === sql).length === 1)
+          throw new Error("database is locked")
+      },
+      query() { return { get: () => null } },
+    }
+    try {
+      expect(internals.writeTxn(conn as never, () => { body++; return "ok" })).toBe("ok")
+      expect(body).toBe(1)
+      expect(sqls).toEqual(["BEGIN IMMEDIATE", "BEGIN IMMEDIATE", "COMMIT"])
+      expect(waits.length).toBe(1)
+      expect(waits[0]).toBeGreaterThanOrEqual(20)
+      expect(waits[0]).toBeLessThanOrEqual(150)
+    } finally { wait.mockRestore() }
+  })
+
+  test("COMMIT retries transient BUSY without replaying body", async () => {
+    const { internals } = await import("../src/service/hermes-kanban")
+    const wait = spyOn(Atomics, "wait").mockImplementation((() => "timed-out") as never)
+    let body = 0
+    const sqls: string[] = []
+    const conn = {
+      exec(sql: string) {
+        sqls.push(sql)
+        if (sql === "COMMIT" && sqls.filter(s => s === sql).length === 1)
+          throw new Error("database is busy")
+      },
+      query() { return { get: () => null } },
+    }
+    try {
+      internals.writeTxn(conn as never, () => { body++ })
+      expect(body).toBe(1)
+      expect(sqls).toEqual(["BEGIN IMMEDIATE", "COMMIT", "COMMIT"])
+    } finally { wait.mockRestore() }
+  })
+
+  test("persistent COMMIT BUSY rolls back and preserves original error", async () => {
+    const { internals } = await import("../src/service/hermes-kanban")
+    const wait = spyOn(Atomics, "wait").mockImplementation((() => "timed-out") as never)
+    let body = 0
+    const sqls: string[] = []
+    const err = new Error("database is busy")
+    const conn = {
+      exec(sql: string) {
+        sqls.push(sql)
+        if (sql === "COMMIT") throw err
+      },
+      query() { return { get: () => null } },
+    }
+    try {
+      expect(() => internals.writeTxn(conn as never, () => { body++ })).toThrow(err)
+      expect(body).toBe(1)
+      expect(sqls).toEqual([
+        "BEGIN IMMEDIATE",
+        "COMMIT", "COMMIT", "COMMIT", "COMMIT", "COMMIT", "COMMIT",
+        "ROLLBACK",
+      ])
+    } finally { wait.mockRestore() }
   })
 })
 
