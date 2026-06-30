@@ -109,8 +109,10 @@ describe("hermes-home readers", () => {
     const { ENV_CATALOG } = await import("../src/service/hermes-home")
     const keys = ENV_CATALOG.flatMap(g => g.keys)
 
-    expect(keys).toContain("CAMOFOX_API_KEY")
-    expect(keys).toContain("SLACK_BOT_TOKEN")
-    expect(keys).toContain("SLACK_APP_TOKEN")
+    for (const key of [
+      "BRV_API_KEY", "CAMOFOX_API_KEY", "HINDSIGHT_API_KEY",
+      "HINDSIGHT_API_URL", "RETAINDB_API_KEY", "RETAINDB_BASE_URL",
+      "SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "SUPERMEMORY_API_KEY",
+    ]) expect(keys).toContain(key)
   })
 })
