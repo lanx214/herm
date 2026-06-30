@@ -43,6 +43,12 @@ describe("rules", () => {
     expect(check("agent.gateway_timeout", "-1")).toMatch(/≥/)
   })
 
+  test("delegation child timeout accepts upstream no-timeout default", () => {
+    expect(check("delegation.child_timeout_seconds", "0")).toBeNull()
+    expect(check("delegation.child_timeout_seconds", "30")).toBeNull()
+    expect(check("delegation.child_timeout_seconds", "-1")).toMatch(/≥/)
+  })
+
   test("duration pattern", () => {
     expect(check("prompt_caching.cache_ttl", "5m")).toBeNull()
     expect(check("prompt_caching.cache_ttl", "2h")).toBeNull()

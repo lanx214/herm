@@ -750,17 +750,23 @@ export async function readCronOutput(
 
 const ENV_PATH = hermesPath(".env");
 
+const envLine = (line: string) => {
+  const trimmed = line.trim()
+  if (!trimmed || trimmed.startsWith("#")) return null
+  const body = trimmed.startsWith("export ") ? trimmed.slice(7).trimStart() : trimmed
+  const eq = body.indexOf("=")
+  if (eq < 1) return null
+  return { key: body.slice(0, eq).trim(), value: body.slice(eq + 1) }
+}
+
 /** Parse ~/.hermes/.env into Record<string, string> */
 export async function readEnvFile(): Promise<Record<string, string>> {
   try {
     const text = await Bun.file(ENV_PATH).text();
     const vars: Record<string, string> = {};
     for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq < 1) continue;
-      vars[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
+      const parsed = envLine(line)
+      if (parsed) vars[parsed.key] = parsed.value
     }
     return vars;
   } catch {
@@ -778,8 +784,9 @@ export async function writeEnvVar(key: string, value: string): Promise<void> {
   const lines = text.split("\n");
   let found = false;
   const updated = lines.map(line => {
-    if (line.startsWith(`${key}=`)) {
+    if (envLine(line)?.key === key) {
       found = true;
+      if (line.trimStart().startsWith("export ")) return `export ${key}=${value}`
       return `${key}=${value}`;
     }
     return line;
@@ -796,7 +803,7 @@ export async function removeEnvVar(key: string): Promise<void> {
     text = await Bun.file(ENV_PATH).text();
   } catch { return; }
 
-  const lines = text.split("\n").filter(l => !l.startsWith(`${key}=`));
+  const lines = text.split("\n").filter(l => envLine(l)?.key !== key);
   await Bun.write(ENV_PATH, lines.join("\n"));
 }
 
@@ -815,6 +822,7 @@ export const ENV_CATALOG: ReadonlyArray<{ category: string; keys: string[] }> = 
     keys: [
       "FIRECRAWL_API_KEY", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID",
       "TAVILY_API_KEY", "EXA_API_KEY", "ELEVENLABS_API_KEY",
+      "CAMOFOX_URL", "CAMOFOX_API_KEY",
     ],
   },
   {
@@ -826,7 +834,12 @@ export const ENV_CATALOG: ReadonlyArray<{ category: string; keys: string[] }> = 
   },
   {
     category: "Agent",
-    keys: ["API_SERVER_KEY", "MEM0_API_KEY"],
+    keys: [
+      "API_SERVER_KEY", "HONCHO_BASE_URL",
+      "HINDSIGHT_API_KEY", "HINDSIGHT_API_URL", "SUPERMEMORY_API_KEY",
+      "MEM0_API_KEY", "RETAINDB_API_KEY", "RETAINDB_BASE_URL",
+      "BRV_API_KEY", "OPENVIKING_API_KEY", "OPENVIKING_ENDPOINT",
+    ],
   },
 ];
 

@@ -28,6 +28,14 @@ describe("config/index", () => {
     expect(fs.find(x => x.key === "agent.max_turns")!.type).toBe("number")
   })
 
+  test("schema includes upstream web extract char limit", () => {
+    expect(SCHEMA["web.extract_char_limit"]).toMatchObject({
+      type: "int",
+      default: 15000,
+      group: "web",
+    })
+  })
+
   test("unknown user key surfaces as an extra field", () => {
     const fs = buildFields({ mystery: { flag: true } })
     const f = fs.find(x => x.key === "mystery.flag")

@@ -1,8 +1,9 @@
-import { describe, test, expect, beforeEach } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { act } from "react"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs"
 import { mountNode, until } from "./harness"
-import { hermesPath } from "../src/service/hermes-home"
+import { hermesPath, readEnvFile, writeEnvVar, removeEnvVar, ENV_CATALOG } from "../src/service/hermes-home"
+import { home } from "../src/home"
 import { Env } from "../src/tabs/Env"
 
 // hermes-home resolves ENV_PATH at import time from the sandbox
@@ -15,8 +16,33 @@ beforeEach(() => {
 })
 
 describe("Env tab", () => {
+  afterEach(() => { home.invalidate("env") })
+
+  test("catalog includes upstream Camofox and memory env vars", () => {
+    const keys = new Set(ENV_CATALOG.flatMap(g => g.keys))
+    for (const key of [
+      "CAMOFOX_URL", "CAMOFOX_API_KEY", "HINDSIGHT_API_KEY", "HINDSIGHT_API_URL",
+      "SUPERMEMORY_API_KEY", "MEM0_API_KEY", "RETAINDB_API_KEY", "RETAINDB_BASE_URL",
+      "BRV_API_KEY", "OPENVIKING_API_KEY", "OPENVIKING_ENDPOINT",
+    ]) expect(keys.has(key), key).toBe(true)
+  })
+
+  test("env reader and writer understand export-prefixed lines", async () => {
+    writeFileSync(ENV, "export CAMOFOX_API_KEY=old\nPLAIN=yes\n")
+    expect(await readEnvFile()).toEqual({ CAMOFOX_API_KEY: "old", PLAIN: "yes" })
+
+    await writeEnvVar("CAMOFOX_API_KEY", "new")
+    expect(readFileSync(ENV, "utf8")).toContain("export CAMOFOX_API_KEY=new")
+
+    await removeEnvVar("CAMOFOX_API_KEY")
+    const text = readFileSync(ENV, "utf8")
+    expect(text).not.toContain("CAMOFOX_API_KEY")
+    expect(text).toContain("PLAIN=yes")
+    home.invalidate("env")
+  })
+
   test("masks values by default; Space reveals all", async () => {
-    const t = await mountNode(<Env focused />)
+    const t = await mountNode(<Env focused />, { height: 80 })
     await until(t, () => t.frame().includes("ANTHROPIC_API_KEY"))
 
     const f = t.frame()

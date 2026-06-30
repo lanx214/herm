@@ -119,7 +119,8 @@ const MERGE: Record<string, string> = {
   model_catalog: "general", onboarding: "general",
   human_delay: "display", dashboard: "display", gateway: "display",
   tool_output: "agent", prompt_caching: "compression", code_execution: "terminal",
-  lsp: "agent", x_search: "agent", tools: "agent", streaming: "display",
+  lsp: "agent", x_search: "agent", tools: "agent", streaming: "display", moa: "agent",
+  computer_use: "agent", desktop: "display",
   slack: "platforms", telegram: "platforms", mattermost: "platforms",
   discord: "platforms", whatsapp: "platforms", matrix: "platforms",
 }
