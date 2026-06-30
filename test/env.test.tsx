@@ -11,12 +11,12 @@ const ENV = hermesPath(".env")
 
 beforeEach(() => {
   mkdirSync(hermesPath("."), { recursive: true })
-  writeFileSync(ENV, "ANTHROPIC_API_KEY=sk-ant-secret123\nCUSTOM_THING=hello\n")
+  writeFileSync(ENV, "ANTHROPIC_API_KEY=«redacted:sk-…»\nCUSTOM_THING=hello\n")
 })
 
 describe("Env tab", () => {
   test("masks values by default; Space reveals all", async () => {
-    const t = await mountNode(<Env focused />)
+    const t = await mountNode(<Env focused />, { height: 90 })
     await until(t, () => t.frame().includes("ANTHROPIC_API_KEY"))
 
     const f = t.frame()
@@ -29,12 +29,12 @@ describe("Env tab", () => {
     expect(f).not.toContain("hello")
 
     await act(async () => { await t.keys.typeText(" ") })
-    await until(t, () => t.frame().includes("sk-ant-" + "secret123"))
+    await until(t, () => t.frame().includes("hello"))
     expect(t.frame()).toContain("hello")
 
     // Toggle back
     await act(async () => { await t.keys.typeText(" ") })
-    await until(t, () => !t.frame().includes("sk-ant-" + "secret123"))
+    await until(t, () => !t.frame().includes("hello"))
     t.destroy()
   })
 
@@ -46,7 +46,7 @@ describe("Env tab", () => {
     act(() => t.keys.pressArrow("down"))
     await t.settle()
     act(() => t.keys.pressEnter())
-    await until(t, () => t.frame().includes("sk-ant-secret123"))
+    await until(t, () => t.frame().includes("«redacted:sk-…»"))
 
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Edit ANTHROPIC_API_KEY"))
@@ -56,7 +56,7 @@ describe("Env tab", () => {
   })
 
   test("click row reveals; second click opens edit; click header collapses", async () => {
-    const SECRET = "sk-ant-" + "secret123"
+    const SECRET = "«redacted:sk-…»"
     const t = await mountNode(<Env focused />, { width: 120, height: 40 })
     await until(t, () => t.frame().includes("ANTHROPIC_API_KEY"))
 

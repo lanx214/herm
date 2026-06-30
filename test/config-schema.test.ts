@@ -40,6 +40,14 @@ describe("schema", () => {
     expect(SCHEMA["kanban.max_in_progress_per_profile"].doc).toContain("positive int")
   })
 
+  test("web extract char limit parity key is present", () => {
+    expect(SCHEMA["web.extract_char_limit"]).toMatchObject({
+      type: "int",
+      default: 15000,
+      group: "web",
+    })
+  })
+
   test("group is first dotted segment (or 'general' for root keys)", () => {
     for (const k of SCHEMA_KEYS) {
       const want = k.includes(".") ? k.split(".")[0] : "general"
