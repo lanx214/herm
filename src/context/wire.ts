@@ -291,6 +291,22 @@ export type SessionUsageResponse = {
   compressions?: number
 }
 
+export type ContextUsageCategory = {
+  color?: string
+  id: string
+  label: string
+  tokens: number
+}
+
+export type ContextBreakdownResponse = {
+  categories: ContextUsageCategory[]
+  context_max: number
+  context_percent: number
+  context_used: number
+  estimated_total: number
+  model?: string
+}
+
 /** Content part inside a multimodal user turn — upstream stores the raw
  *  OpenAI content list for native-mode image routing. We only care about
  *  flattening the text fragments back into a string for render. */
