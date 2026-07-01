@@ -317,6 +317,81 @@ export type CommandsCatalogResponse = {
   warning?: string
 }
 
+export type LearningRun = [text: string, style: string, alpha?: number, hexOverride?: string | null]
+
+export type LearningLabel = {
+  key: string
+  glyph: string
+  label: string
+  meta: string
+  style: string
+  alpha: number
+}
+
+export type LearningLegend = {
+  glyph: string
+  style?: string
+  color?: string
+  label: string
+}
+
+export type LearningNode = {
+  id: string
+  glyph: string
+  label: string
+  fullLabel?: string
+  meta: string
+  body?: string
+  style: string
+}
+
+export type LearningBucket = {
+  index: number
+  label: string
+  date: string
+  skills: number
+  memories: number
+  total: number
+  category: string | null
+  color: string | null
+  nodes: LearningNode[]
+}
+
+export type LearningFramesRequest = {
+  cols?: number
+  rows?: number
+  frames?: number
+}
+
+export type LearningFramesResponse = {
+  frames: Array<{
+    reveal: number
+    date: string
+    visible: number
+    grid: LearningRun[][]
+    labels: LearningLabel[]
+  }>
+  legend: LearningLegend[]
+  categories?: LearningLegend[]
+  buckets?: LearningBucket[]
+  summary: string[]
+  axis: { start: string; end: string }
+  count: number
+  cols: number
+  rows: number
+}
+
+export type LearningDetailRequest = { id: string }
+
+export type LearningDetailResponse =
+  | { ok: true; kind: "memory" | "skill"; id: string; label: string; content: string }
+  | { ok: false; message: string }
+
+export type LearningEditRequest = { id: string; content: string }
+export type LearningDeleteRequest = { id: string }
+
+export type LearningMutationResponse = { ok: boolean; message: string }
+
 export type ConfigSetResponse = {
   value?: string
   info?: SessionInfo

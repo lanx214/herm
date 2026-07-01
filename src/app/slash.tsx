@@ -222,6 +222,7 @@ export function useSlash(c: SlashCtx): (cmd: SlashCommand, arg?: string) => void
         case "status": openStatus(dialog, x.info, x.sid); return
         case "usage": openUsage(dialog, gw); return
         case "profile": openProfile(dialog); return
+        case "journey": x.goTo(TAB_SLASH.journey.tab, TAB_SLASH.journey.sub); return
         case "chafa":
           if (!arg.trim()) { toast.show({ variant: "info", message: "usage: /chafa <path>" }); return }
           openChafa(dialog, arg.trim())

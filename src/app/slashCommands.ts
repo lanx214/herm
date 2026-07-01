@@ -40,6 +40,7 @@ export const LOCAL_NAMES = new Set([
   "resume", "branch", "compress", "undo", "redo", "retry", "model", "yolo", "quit",
   "copy", "paste", "image", "background", "voice", "mouse", "redraw", "queue",
   "stash",
+  "journey",
   // Ink-only UI toggles — local no-op with a note
   "compact", "setup",
   // browser: use browser.manage RPC, not slash.exec (issue #82)
@@ -64,6 +65,7 @@ export const LOCAL_COMMANDS: ReadonlyArray<SlashCommand> = [
   { name: "status",  description: "Version, model, paths",       category: "Info",   aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "usage",   description: "Credits, account status, tokens, context fill, cost", category: "Info", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "profile", description: "Active profile details",       category: "Info",   aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
+  { name: "journey", description: "Open the learning journey graph", category: "Info", aliases: ["learning", "memory-graph"], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "steer",   description: "Inject a note mid-turn (no interrupt)", category: "Session", aliases: [], argsHint: "[text]", subcommands: [], source: "local", target: "local" },
   { name: "reload-mcp", description: "Restart MCP servers & rediscover tools", category: "Session", aliases: [], argsHint: "[now|always]", subcommands: ["now", "always"], source: "local", target: "local" },
   { name: "reload", description: "Hot-reload ~/.hermes/.env (API keys)", category: "Session", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
