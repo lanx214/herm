@@ -18,6 +18,16 @@ const int = (lo: number, hi: number, what = `${lo}–${hi}`): Rule => raw => {
   return null
 }
 
+const intMin = (lo: number, what = `≥ ${lo}`): Rule => raw => {
+  const n = Number(raw)
+  if (!Number.isInteger(n)) return `expected integer ${what}`
+  if (n < lo) return `expected ${what}`
+  return null
+}
+
+const integer: Rule = raw =>
+  Number.isInteger(Number(raw)) ? null : "expected integer"
+
 const float = (lo: number, hi: number): Rule => raw => {
   const n = Number(raw)
   if (!Number.isFinite(n)) return `expected number ${lo}–${hi}`
@@ -46,15 +56,15 @@ export const RULES: Record<string, Rule> = {
   "delegation.max_iterations": int(1, 10000),
   "delegation.max_concurrent_children": int(1, 64),
   "delegation.max_spawn_depth": int(1, 3),
-  "delegation.max_summary_chars": nonNeg,
+  "delegation.max_summary_chars": intMin(0),
 
   // timeouts (seconds; 0 usually means "disabled")
   "agent.gateway_timeout": nonNeg,
   "agent.gateway_timeout_warning": nonNeg,
   "agent.gateway_notify_interval": nonNeg,
   "agent.restart_drain_timeout": nonNeg,
-  "gateway.platform_connect_timeout": nonNeg,
-  "delegation.child_timeout_seconds": nonNeg,
+  "gateway.platform_connect_timeout": integer,
+  "delegation.child_timeout_seconds": integer,
   "browser.command_timeout": int(1, 600),
   "approvals.timeout": int(1, 3600),
   "security.tirith_timeout": int(1, 120),

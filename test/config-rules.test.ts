@@ -43,6 +43,20 @@ describe("rules", () => {
     expect(check("agent.gateway_timeout", "-1")).toMatch(/≥/)
   })
 
+  test("disableable timeout rules accept negative integers", () => {
+    expect(check("gateway.platform_connect_timeout", "-1")).toBeNull()
+    expect(check("delegation.child_timeout_seconds", "-1")).toBeNull()
+    expect(check("gateway.platform_connect_timeout", "1.5")).toMatch(/integer/)
+    expect(check("delegation.child_timeout_seconds", "1.5")).toMatch(/integer/)
+  })
+
+  test("summary limit requires non-negative integer", () => {
+    expect(check("delegation.max_summary_chars", "0")).toBeNull()
+    expect(check("delegation.max_summary_chars", "24000")).toBeNull()
+    expect(check("delegation.max_summary_chars", "-1")).toMatch(/≥/)
+    expect(check("delegation.max_summary_chars", "1.9")).toMatch(/integer/)
+  })
+
   test("duration pattern", () => {
     expect(check("prompt_caching.cache_ttl", "5m")).toBeNull()
     expect(check("prompt_caching.cache_ttl", "2h")).toBeNull()
