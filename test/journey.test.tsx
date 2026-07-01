@@ -78,6 +78,67 @@ describe("Journey", () => {
     expect(t.gw.last("learning.detail")?.params.id).toBe("memory:memory:0")
   })
 
+  test("uses shared list keys and keeps selection visible", async () => {
+    const many = frames()
+    const nodes = Array.from({ length: 24 }, (_, i) => ({
+      id: `memory:memory:${i}`,
+      glyph: "●",
+      label: `Memory ${i}`,
+      fullLabel: `Memory card ${i}`,
+      meta: "MEMORY.md",
+      body: `body ${i}`,
+      style: "memory",
+    }))
+    many.buckets = [{ ...many.buckets![0], nodes, total: nodes.length, memories: nodes.length, skills: 0 }]
+    many.count = nodes.length
+    const gw = new MockGateway({ "learning.frames": () => many })
+
+    await using t = await mountNode(<Journey focused />, { gw, width: 100, height: 20 })
+    await until(t, () => t.frame().includes("▸   └─ ● Memory card 23"))
+
+    act(() => t.keys.pressKey("HOME"))
+    await until(t, () => t.frame().includes("▸ Jun 30"))
+    await act(async () => { await t.keys.pressKeys(["\x1B[6~"]) })
+    await until(t, () => t.frame().includes("▸   ├─ ● Memory card 8"))
+    act(() => t.keys.pressKey("END"))
+    await until(t, () => t.frame().includes("▸   └─ ● Memory card 23"))
+  })
+
+  test("mouse hover selects and mouse down opens detail", async () => {
+    const gw = new MockGateway({
+      "learning.frames": () => frames(),
+      "learning.detail": p => ({ ok: true, kind: "skill", id: p.id, label: "Skill A", content: "skill detail" }),
+    })
+    await using t = await mountNode(<Journey focused />, { gw, width: 120, height: 36 })
+    await until(t, () => t.frame().includes("Skill A"))
+    const y = t.frame().split("\n").findIndex(l => l.includes("Skill A"))
+
+    await act(async () => { await t.mouse.moveTo(6, y) })
+    await until(t, () => t.frame().includes("▸   ├─ ◆ Skill A"))
+    await act(async () => { await t.mouse.pressDown(6, y) })
+    await until(t, () => t.frame().includes("skill detail"))
+    expect(t.gw.last("learning.detail")?.params.id).toBe("skill-a")
+  })
+
+  test("detail pane receives Tab focus and keyboard scrolling", async () => {
+    const content = Array.from({ length: 30 }, (_, i) => `detail line ${i}`).join("\n")
+    const gw = new MockGateway({
+      "learning.frames": () => frames(),
+      "learning.detail": p => ({ ok: true, kind: "memory", id: p.id, label: "Memory card", content }),
+    })
+    await using t = await mountNode(<Journey focused />, { gw, width: 120, height: 22 })
+    await until(t, () => t.frame().includes("Memory card"))
+
+    act(() => t.keys.pressEnter())
+    await until(t, () => t.frame().includes("detail line 0"))
+    act(() => t.keys.pressKey("tab"))
+    await until(t, () => !t.frame().includes("Esc close"))
+    await act(async () => { await t.keys.pressKeys(["\x1B[6~"]) })
+    await until(t, () => t.frame().includes("detail line 14") || t.frame().includes("detail line 15"))
+    act(() => t.keys.pressEscape())
+    await until(t, () => t.frame().includes("Esc close"))
+  })
+
   test("opens on the newest learned node", async () => {
     const gw = new MockGateway({
       "learning.frames": () => oldFrames(),
