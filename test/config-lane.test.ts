@@ -54,6 +54,7 @@ describe("lane.toCliString", () => {
   })
   test("int truncates", () => {
     expect(toCliString("agent.max_turns", 90.7)).toBe("90")
+    expect(toCliString("gateway.platform_connect_timeout", 30.9)).toBe("30")
   })
   test("float preserves", () => {
     expect(toCliString("compression.threshold", 0.85)).toBe("0.85")

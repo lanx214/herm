@@ -42,16 +42,19 @@ export const RULES: Record<string, Rule> = {
 
   // turn/iteration budgets
   "agent.max_turns": int(1, 10000),
+  "agent.max_verify_nudges": int(0, 100),
   "delegation.max_iterations": int(1, 10000),
   "delegation.max_concurrent_children": int(1, 64),
   "delegation.max_spawn_depth": int(1, 3),
+  "delegation.max_summary_chars": nonNeg,
 
   // timeouts (seconds; 0 usually means "disabled")
   "agent.gateway_timeout": nonNeg,
   "agent.gateway_timeout_warning": nonNeg,
   "agent.gateway_notify_interval": nonNeg,
   "agent.restart_drain_timeout": nonNeg,
-  "delegation.child_timeout_seconds": int(30, 86400),
+  "gateway.platform_connect_timeout": nonNeg,
+  "delegation.child_timeout_seconds": nonNeg,
   "browser.command_timeout": int(1, 600),
   "approvals.timeout": int(1, 3600),
   "security.tirith_timeout": int(1, 120),
@@ -65,6 +68,7 @@ export const RULES: Record<string, Rule> = {
 
   // enums the schema doesn't carry
   "agent.service_tier": oneOf("", "fast", "standard"),
+  "agent.verify_on_stop": oneOf("auto", "true", "false"),
   "display.busy_input_mode": oneOf("queue", "steer", "interrupt"),
   "display.details_mode": oneOf("hidden", "collapsed", "expanded"),
   "display.thinking_mode": oneOf("collapsed", "truncated", "full"),
