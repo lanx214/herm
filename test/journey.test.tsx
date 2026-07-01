@@ -104,6 +104,18 @@ describe("Journey", () => {
     await until(t, () => t.frame().includes("▸   └─ ● Memory card 23"))
   })
 
+  test("moves backward across bucket gaps", async () => {
+    const gw = new MockGateway({ "learning.frames": () => oldFrames() })
+
+    await using t = await mountNode(<Journey focused />, { gw, width: 120, height: 36 })
+    await until(t, () => t.frame().includes("▸   └─ ● Newest memory"))
+
+    act(() => t.keys.pressArrow("up"))
+    await until(t, () => t.frame().includes("▸ Jul 01"))
+    act(() => t.keys.pressArrow("up"))
+    await until(t, () => t.frame().includes("▸   └─ ● Memory card"))
+  })
+
   test("mouse hover selects and mouse down opens detail", async () => {
     const gw = new MockGateway({
       "learning.frames": () => frames(),

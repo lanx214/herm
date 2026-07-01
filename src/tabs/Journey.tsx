@@ -44,13 +44,14 @@ const latest = (rows: readonly JourneyRow[]) => {
   return i >= 0 ? rows.length - 1 - i : Math.max(0, rows.length - 1)
 }
 
-const snap = (rows: readonly JourneyRow[], i: number) => {
+const snap = (rows: readonly JourneyRow[], i: number, dir = 1) => {
   if (rows.length === 0) return 0
   const at = Math.max(0, Math.min(rows.length - 1, i))
   if (rows[at]?.kind !== "gap") return at
+  const rev = [...rows].reverse().findIndex((r, n) => rows.length - 1 - n < at && r.kind !== "gap")
+  if (dir < 0 && rev >= 0) return rows.length - 1 - rev
   const fwd = rows.findIndex((r, n) => n > at && r.kind !== "gap")
   if (fwd >= 0) return fwd
-  const rev = [...rows].reverse().findIndex((r, n) => rows.length - 1 - n < at && r.kind !== "gap")
   return rev >= 0 ? rows.length - 1 - rev : at
 }
 
@@ -96,7 +97,8 @@ export const Journey = memo((props: { focused?: boolean }) => {
 
   const setListSel = useCallback((next: number | ((prev: number) => number)) => {
     setSel(prev => {
-      const n = snap(rows, typeof next === "function" ? next(prev) : next)
+      const target = typeof next === "function" ? next(prev) : next
+      const n = snap(rows, target, target - prev)
       follow.opts.scrollTo(n)
       return n
     })
