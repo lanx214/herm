@@ -7,6 +7,38 @@ function info() {
 }
 
 describe("queued prompt submit", () => {
+  test("rapid submit queues behind accepted prompt before message.start", async () => {
+    let release!: () => void
+    const first = new Promise<{ status: string }>(resolve => {
+      release = () => resolve({ status: "streaming" })
+    })
+    const gw = new MockGateway({
+      "prompt.submit": () => first,
+    })
+    const t = await mount({ gw })
+    await until(t, () => t.frame().includes("Ready"))
+
+    await act(async () => { await t.keys.typeText("message A") })
+    act(() => t.keys.pressEnter())
+    await until(t, () => gw.calls.filter(c => c.method === "prompt.submit").length === 1)
+
+    await act(async () => { await t.keys.typeText("message B") })
+    act(() => t.keys.pressEnter())
+    await t.settle()
+
+    expect(gw.calls.filter(c => c.method === "prompt.submit")).toHaveLength(1)
+    expect(t.frame()).toContain("⏸ 1. message B")
+
+    act(() => release())
+    await until(t, () => t.frame().includes("message A"))
+    act(() => gw.push({ type: "message.start" }))
+    act(() => gw.push({ type: "message.complete", payload: { status: "complete", text: "done" } }))
+    await until(t, () => gw.calls.filter(c => c.method === "prompt.submit").length === 2)
+
+    expect(gw.last("prompt.submit")?.params.text).toBe("message B")
+    t.destroy()
+  })
+
   test("interrupt-mode queue waits for session.info before draining", async () => {
     const gw = new MockGateway({
       "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},

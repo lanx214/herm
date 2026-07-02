@@ -205,7 +205,13 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const [skin, setSkin] = useState<SkinState>(() => deriveSkin(undefined))
   const inflight = useRef(false)
   const hold = useRef(false)
+  const pending = useRef(false)
   const [pulse, setPulse] = useState(0)
+  const start = useCallback(() => {
+    inflight.current = false
+    pending.current = false
+    setPulse(n => n + 1)
+  }, [])
   const settle = useCallback(() => {
     if (!hold.current) return
     hold.current = false
@@ -336,12 +342,14 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const stream = useStream({
     dispatch, session, launchRef, sidRef, sessionStart, goalHook,
     setSid, setInfo, setReady, setTitle, setBusy, setUsage, setStatus, setSkin, setErrorPulse, settle,
+    start,
   })
   intr.current = stream.doInterrupt
 
   const reset = useCallback(() => {
     stream.interrupted.current = false
     hold.current = false
+    pending.current = false
     toast.clear("credits.depleted")
     undone.current = []
     dispatch({ kind: "reset" })
@@ -617,6 +625,13 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
     const withMedia = attachments.length
       ? [...attachments.flatMap(a => a.path ? [`MEDIA:${a.path}`] : []), text].filter(Boolean).join("\n")
       : text
+    if (pending.current) {
+      setQueue(q => [...q, raw])
+      setStatus("queued for next turn")
+      return
+    }
+    pending.current = true
+    setPulse(n => n + 1)
     gw.request("prompt.submit", { text })
       .then(() => {
         dispatch({ kind: "user", text: withMedia })
@@ -627,6 +642,8 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       .catch((e: Error) => {
         const msg = e instanceof Error ? e.message : String(e)
         if (BUSY_RE.test(msg)) {
+          pending.current = false
+          setPulse(n => n + 1)
           inflight.current = true
           setQueue(q => [text, ...q])
           setStatus("queued for next turn")
@@ -637,6 +654,8 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
           }, 400)
           return
         }
+        pending.current = false
+        setPulse(n => n + 1)
         inflight.current = false
         dispatch({ kind: "system", text: `submit failed: ${msg}` })
         toast.show({ variant: "error", message: msg })
@@ -681,10 +700,10 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   // `queue`; on idle the head auto-submits. turnReducer doesn't flip
   // `streaming` until the gateway emits message.start (async), so a
   // naive effect would fire repeatedly and drain the whole queue in
-  // one tick. `inflight` bridges the dispatch→message.start gap.
-  useEffect(() => { if (turn.streaming) inflight.current = false }, [turn.streaming])
+  // one tick. `pending`/`inflight` bridge the submit→message.start gap.
+  useEffect(() => { if (turn.streaming) start() }, [turn.streaming, start])
   useEffect(() => {
-    if (!capabilities.canDrainQueue || inflight.current || hold.current || queue.length === 0) return
+    if (!capabilities.canDrainQueue || inflight.current || hold.current || pending.current || queue.length === 0) return
     const [head, ...rest] = queue
     inflight.current = true
     setQueue(rest)
@@ -883,7 +902,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
               <VoiceIndicator voice={voice.state} keyLabel={voice.keyLabel} />
               <Composer
                 ref={composer}
-                focused={inputFocused} canSubmitPrompt={capabilities.canSubmitPrompt} ready={ready} streaming={turn.streaming}
+                focused={inputFocused} canSubmitPrompt={capabilities.canSubmitPrompt} ready={ready} streaming={turn.streaming || pending.current}
                 status={status}
                 model={info?.model}
                 hidden={hidden}

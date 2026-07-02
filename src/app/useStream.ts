@@ -37,6 +37,7 @@ type Ctx = {
   setSkin: (s: SkinState) => void
   setErrorPulse: (v: boolean) => void
   settle: () => void
+  start: () => void
 }
 
 // Events that mutate the in-progress assistant turn. Everything else
@@ -104,6 +105,7 @@ export function useStream(c: Ctx) {
   const handle = useCallback((ev: GatewayEvent) => {
     const x = ctx.current
     if (ev.type === "gateway.ready") info.current = false
+    if (ev.type === "message.start") x.start()
     if (ev.type === "background.complete" && ev.session_id && x.sidRef.current
         && ev.session_id !== x.sidRef.current) {
       bg.unregister(ev.payload.task_id)
