@@ -193,6 +193,42 @@ describe("model-picker", () => {
     t.destroy()
   })
 
+  test("Vertex auth shows setup guidance without API-key prompt", async () => {
+    const saves: Array<Record<string, unknown>> = []
+    const t = await mountNode(<Open />, {
+      handlers: {
+        "model.options": () => ({
+          providers: [
+            { slug: "openai", name: "OpenAI", total_models: 1, models: ["gpt-4"] },
+            {
+              slug: "vertex",
+              name: "Vertex AI",
+              total_models: 0,
+              models: [],
+              authenticated: false,
+              auth_type: "vertex",
+              key_env: "VERTEX_CREDENTIALS_PATH",
+            },
+          ],
+        }),
+        "model.save_key": (p) => { saves.push(p); return {} },
+      },
+    })
+    await until(t, () => t.frame().includes("Vertex AI"))
+    expect(t.frame()).toContain("set VERTEX_CREDENTIALS_PATH")
+    expect(t.frame()).not.toContain("auth_type=vertex")
+    expect(t.frame()).not.toContain("paste VERTEX_CREDENTIALS_PATH")
+
+    act(() => t.keys.pressArrow("down")); await t.settle()
+    act(() => t.keys.pressEnter()); await t.settle()
+    await until(t, () => t.frame().includes("set VERTEX_CREDENTIALS_PATH"))
+
+    expect(saves).toHaveLength(0)
+    expect(t.frame()).not.toContain("Paste VERTEX_CREDENTIALS_PATH")
+    expect(t.frame()).not.toContain("Switch Model (Vertex AI)")
+    t.destroy()
+  })
+
   test("provider dialog leads with current provider and Enter selects it", async () => {
     const opts = {
       provider: "anthropic",

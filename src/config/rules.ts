@@ -73,6 +73,9 @@ export const RULES: Record<string, Rule> = {
   "agent.api_max_retries": int(0, 20),
   "tool_output.max_bytes": int(1024, 10_000_000),
   "tool_output.max_lines": int(10, 100_000),
+  "tools.tool_search.max_search_limit": int(1, 50),
+  "tools.tool_search.search_default_limit": int(1, 50),
+  "tools.tool_search.threshold_pct": int(0, 100),
   "sessions.retention_days": int(1, 3650),
   "sessions.min_interval_hours": int(1, 720),
 

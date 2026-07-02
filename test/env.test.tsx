@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from "bun:test"
 import { act } from "react"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { mountNode, until } from "./harness"
-import { hermesPath } from "../src/service/hermes-home"
+import { ENV_CATALOG, hermesPath } from "../src/service/hermes-home"
 import { Env } from "../src/tabs/Env"
 
 // hermes-home resolves ENV_PATH at import time from the sandbox
@@ -15,6 +15,16 @@ beforeEach(() => {
 })
 
 describe("Env tab", () => {
+  test("catalog includes Vertex credentials with provider keys", () => {
+    const group = ENV_CATALOG.find(g => g.category === "LLM Providers")
+    const all = ENV_CATALOG.flatMap(g => g.keys)
+    const dupes = all.filter((k, i, a) => a.indexOf(k) !== i)
+
+    expect(group?.keys).toContain("VERTEX_CREDENTIALS_PATH")
+    expect(all).toContain("VERTEX_CREDENTIALS_PATH")
+    expect(dupes).toEqual([])
+  })
+
   test("masks values by default; Space reveals all", async () => {
     const t = await mountNode(<Env focused />)
     await until(t, () => t.frame().includes("ANTHROPIC_API_KEY"))
@@ -98,6 +108,22 @@ describe("Env tab", () => {
 
     const text = await Bun.file(ENV).text()
     expect(text).toContain("FOO_KEY=abc")
+    t.destroy()
+  })
+
+  test("cataloged Vertex credentials do not surface as Other", async () => {
+    writeFileSync(ENV, "VERTEX_CREDENTIALS_PATH=/tmp/vertex.json\nCUSTOM_THING=hello\n")
+    const t = await mountNode(<Env focused />)
+    await until(t, () => t.frame().includes("VERTEX_CREDENTIALS_PATH"))
+
+    const lines = t.frame().split("\n")
+    const providers = lines.findIndex(l => l.includes("LLM Providers"))
+    const vertex = lines.findIndex(l => l.includes("VERTEX_CREDENTIALS_PATH"))
+    const other = lines.findIndex(l => l.includes("Other"))
+    expect(providers).toBeGreaterThanOrEqual(0)
+    expect(vertex).toBeGreaterThan(providers)
+    expect(other).toBeGreaterThan(vertex)
+    expect(t.frame()).toContain("CUSTOM_THING")
     t.destroy()
   })
 })

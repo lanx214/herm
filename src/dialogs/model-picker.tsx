@@ -35,7 +35,10 @@ const configured = (p: ModelOptionProvider) => (p.models?.length ?? 0) > 0
 const setupDescription = (p: ModelOptionProvider): string | undefined => {
   if (p.warning) return p.warning
   if (p.auth_type === "api_key" && p.key_env) return `paste ${p.key_env} to activate`
-  if (p.key_env) return p.key_env
+  if (p.auth_type === "vertex") return p.key_env
+    ? `set ${p.key_env} to your service-account JSON path`
+    : "configure Vertex credentials with hermes model"
+  if (p.key_env) return `set ${p.key_env} before using this provider`
   if (p.auth_type) return `run hermes model to configure (${p.auth_type})`
   return undefined
 }
@@ -47,6 +50,7 @@ const providerDescription = (p: ModelOptionProvider): string | undefined => {
 
 const providerHint = (p: ModelOptionProvider): string | undefined => {
   if (p.authenticated !== false) return undefined
+  if (p.auth_type === "vertex") return undefined
   return p.auth_type ? `auth_type=${p.auth_type}` : undefined
 }
 

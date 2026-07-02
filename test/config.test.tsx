@@ -79,6 +79,15 @@ describe("Config tab", () => {
     expect(t.frame()).toContain("display")
     expect(t.frame()).toMatch(/✓ ON/)
 
+    act(() => t.keys.pressEscape())
+    await t.settle()
+    await act(async () => { await t.keys.typeText("/") })
+    await t.settle()
+    await act(async () => { await t.keys.typeText("vertex") })
+    await until(t, () => t.frame().includes("project_id") && t.frame().includes("region"))
+    expect(t.frame()).toContain("vertex")
+    expect(t.frame()).toMatch(/region\s+global/)
+
     t.destroy()
   })
 

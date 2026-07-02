@@ -57,6 +57,14 @@ describe("rules", () => {
     expect(check("delegation.max_summary_chars", "1.9")).toMatch(/integer/)
   })
 
+  test("tool search limits use documented ranges", () => {
+    expect(check("tools.tool_search.max_search_limit", "50")).toBeNull()
+    expect(check("tools.tool_search.max_search_limit", "51")).toMatch(/1–50/)
+    expect(check("tools.tool_search.search_default_limit", "0")).toMatch(/1–50/)
+    expect(check("tools.tool_search.threshold_pct", "100")).toBeNull()
+    expect(check("tools.tool_search.threshold_pct", "101")).toMatch(/0–100/)
+  })
+
   test("duration pattern", () => {
     expect(check("prompt_caching.cache_ttl", "5m")).toBeNull()
     expect(check("prompt_caching.cache_ttl", "2h")).toBeNull()

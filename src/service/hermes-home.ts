@@ -807,7 +807,7 @@ export const ENV_CATALOG: ReadonlyArray<{ category: string; keys: string[] }> = 
       "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
       "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY",
       "MISTRAL_API_KEY", "XAI_API_KEY", "TOGETHER_API_KEY",
-      "FIREWORKS_API_KEY", "NOUS_API_KEY",
+      "FIREWORKS_API_KEY", "NOUS_API_KEY", "VERTEX_CREDENTIALS_PATH",
     ],
   },
   {
