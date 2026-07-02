@@ -64,4 +64,23 @@ describe("schema", () => {
     expect(SCHEMA["agent.gateway_timeout"].doc.length).toBeGreaterThan(20)
     expect(SCHEMA["compression.threshold"].doc.length).toBeGreaterThan(5)
   })
+
+  test("upstream config/env refresh keys are present", () => {
+    for (const k of [
+      "moa.save_traces",
+      "moa.trace_dir",
+      "gateway.restart_loop_guard.max_restarts",
+      "gateway.restart_loop_guard.window_seconds",
+      "browser.allow_unsafe_evaluate",
+      "vertex.project_id",
+      "vertex.region",
+      "discord.bots_require_inline_mention",
+    ]) expect(SCHEMA[k], k).toBeDefined()
+
+    expect(SCHEMA["custom_providers"].doc).toContain("ssl_ca_cert")
+    expect(SCHEMA["custom_providers"].doc).toContain("ssl_verify")
+    expect(SCHEMA["providers"].doc).toContain("ssl_ca_cert")
+    expect(SCHEMA["providers"].doc).toContain("ssl_verify")
+    expect(SCHEMA["prompt_caching.enabled"]).toBeUndefined()
+  })
 })
