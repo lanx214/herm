@@ -38,6 +38,12 @@ describe("rules", () => {
     expect(check("logging.level", "TRACE")).toMatch(/one of/)
   })
 
+  test("tool progress accepts only live TUI modes", () => {
+    for (const mode of ["off", "new", "all", "verbose"])
+      expect(check("display.tool_progress", mode), mode).toBeNull()
+    expect(check("display.tool_progress", "log")).toMatch(/one of/)
+  })
+
   test("nonNeg accepts 0", () => {
     expect(check("agent.gateway_timeout", "0")).toBeNull()
     expect(check("agent.gateway_timeout", "-1")).toMatch(/≥/)

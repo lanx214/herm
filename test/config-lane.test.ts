@@ -110,6 +110,27 @@ describe("lane.writeConfig", () => {
     expect(res.failed[0]).toMatchObject({ key: "model" })
     expect(res.failed[0].err).toContain("session busy")
   })
+
+  test("tool progress live modes use verbose RPC alias", async () => {
+    const gw = mockGw({ "config.set": () => ({}) })
+    const res = await writeConfig(gw, [{ key: "display.tool_progress", to: "verbose" }])
+    expect(res).toEqual({ ok: ["display.tool_progress"], failed: [], warnings: [] })
+    expect(gw.calls).toEqual([
+      { method: "config.set", params: { key: "verbose", value: "verbose" } },
+    ])
+  })
+
+  test("tool progress log is never sent to verbose RPC alias", async () => {
+    const gw = mockGw({
+      "config.set": () => { throw new Error("should not call rpc") },
+    })
+    const res = await writeConfig(gw, [{ key: "display.tool_progress", to: "log" }])
+    expect(gw.calls).toEqual([])
+    expect(res.ok).toEqual([])
+    expect(res.failed).toEqual([
+      { key: "display.tool_progress", err: "log is a gateway-only config-file mode, not a live TUI mode" },
+    ])
+  })
 })
 
 describe("lane.verifyWrite", () => {

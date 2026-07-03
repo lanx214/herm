@@ -9,6 +9,8 @@
  * not "is this a number".
  */
 
+import { TOOL_PROGRESS } from "./lane"
+
 type Rule = (raw: string) => string | null
 
 const int = (lo: number, hi: number, what = `${lo}–${hi}`): Rule => raw => {
@@ -68,7 +70,7 @@ export const RULES: Record<string, Rule> = {
   "display.busy_input_mode": oneOf("queue", "steer", "interrupt"),
   "display.details_mode": oneOf("hidden", "collapsed", "expanded"),
   "display.thinking_mode": oneOf("collapsed", "truncated", "full"),
-  "display.tool_progress": oneOf("off", "new", "all", "verbose"),
+  "display.tool_progress": oneOf(...TOOL_PROGRESS),
   "display.final_response_markdown": oneOf("render", "strip", "raw"),
   "logging.level": oneOf("DEBUG", "INFO", "WARNING", "ERROR"),
   "approvals.mode": oneOf("manual", "ask", "yolo", "deny"),
