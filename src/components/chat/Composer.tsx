@@ -279,7 +279,7 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>((props, ref) => {
       return
     }
     const p = live.current.pop
-    if (p.open) {
+    if (p.open && !(p.spot?.whole && p.spot.query.includes(" "))) {
       const c = p.popover?.[p.cursor]
       if (c) fill(c)
       return

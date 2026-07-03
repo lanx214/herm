@@ -41,7 +41,7 @@ export const LOCAL_NAMES = new Set([
   "copy", "paste", "image", "background", "voice", "mouse", "redraw", "queue",
   "stash",
   // Ink-only UI toggles — local no-op with a note
-  "compact", "setup",
+  "setup",
   // browser: use browser.manage RPC, not slash.exec (issue #82)
   "browser",
 ])
@@ -79,6 +79,7 @@ export const LOCAL_COMMANDS: ReadonlyArray<SlashCommand> = [
   { name: "stash",  description: "Park the prompt (pop/list to restore)", category: "Client",  aliases: [], argsHint: "[pop|list]", subcommands: ["pop", "list"], source: "local", target: "local" },
   { name: "redo",   description: "Re-send the last undone message",       category: "Session", aliases: [], argsHint: "", subcommands: [], source: "local", target: "local" },
   { name: "branch", description: "Fork current conversation",              category: "Session", aliases: ["fork"], argsHint: "[name]", subcommands: [], source: "local", target: "local" },
+  { name: "compress", description: "Compress conversation context",         category: "Session", aliases: ["compact"], argsHint: "[here [N] | focus topic | --preview|--dry-run]", subcommands: [], source: "local", target: "local" },
   { name: "browser", description: "Connect/disconnect a CDP browser",      category: "Session", aliases: [], argsHint: "[connect|disconnect|status] [url]", subcommands: ["connect", "disconnect", "status"], source: "local", target: "local" },
 ]
 
