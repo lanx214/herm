@@ -160,6 +160,7 @@ export type McpServer = {
   transport: string
   tools: number
   connected: boolean
+  status?: string
   error?: string
 }
 

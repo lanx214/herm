@@ -62,6 +62,7 @@ export function useStream(c: Ctx) {
   const bg = useBackground()
   const ctx = useRef(c); ctx.current = c
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const lastMcpFailKey = useRef("")
 
   useEffect(() => () => {
     timers.current.forEach(clearTimeout)
@@ -168,11 +169,15 @@ export function useStream(c: Ctx) {
         // session.title RPC that would re-emit session.info and create
         // a feedback loop (config.get ↔ session.title ↔ session.info).
         if (si.title !== undefined) x.setTitle(si.title)
-        const bad = (si.mcp_servers ?? []).filter(s => !s.connected)
-        if (bad.length) x.dispatch({
+        const bad = (si.mcp_servers ?? []).filter(s => !s.connected && s.status !== "disabled")
+        const k = bad.map(s => s.name).sort().join()
+        if (bad.length && lastMcpFailKey.current !== k) {
+          lastMcpFailKey.current = k
+          x.dispatch({
           kind: "system",
           text: `MCP: ${bad.length} server(s) failed to connect — ${bad.map(s => s.name + (s.error ? ` (${s.error})` : "")).join(", ")}`,
         })
+        } else if (!bad.length) lastMcpFailKey.current = ""
         gw.request<{ value?: string }>("config.get", { key: "busy" }).then(r => {
           const m = r.value
           if (m === "queue" || m === "steer" || m === "interrupt") x.setBusy(m)
