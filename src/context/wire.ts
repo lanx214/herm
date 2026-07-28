@@ -469,6 +469,13 @@ export type ImageAttachResponse = {
   message?: string
 }
 
+export type ImageDetachRequest = { path: string }
+
+export type ImageDetachResponse = {
+  detached: boolean
+  count: number
+}
+
 export type DropDetectResponse =
   | { matched: false }
   | ({ matched: true; is_image: true; text: string } & Omit<ImageAttachResponse, "attached" | "message">)
