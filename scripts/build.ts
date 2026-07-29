@@ -65,6 +65,10 @@ const external = [
   "ws",
 ]
 
+const gitTag = await $`git describe --tags --abbrev=0`
+  .text().then(t => t.trim() + " (fork)")
+  .catch(() => "dev")
+
 const result = await Bun.build({
   entrypoints: [
     "src/index.tsx",
@@ -82,6 +86,7 @@ const result = await Bun.build({
   define: {
     "process.env.NODE_ENV": '"production"',
     "process.env.DEV": '"false"',
+    "process.env.HERM_VERSION": JSON.stringify(gitTag),
   },
 })
 

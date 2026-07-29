@@ -16,7 +16,7 @@ const pkgVersion = (d: string, up = 4): string => {
   return up > 0 ? pkgVersion(dirname(d), up - 1) : "0.0.0"
 }
 
-export const VERSION = pkgVersion(import.meta.dirname)
+export const VERSION = process.env.HERM_VERSION || pkgVersion(import.meta.dirname)
 
 export type Launch =
   | { gateway?: string; mode: "new"; profile?: string; splash?: boolean }
