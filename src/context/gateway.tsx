@@ -5,7 +5,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react"
 import type { ReactNode } from "react"
 import { EventEmitter } from "events"
-import { GatewayClient } from "../context/gateway-client"
+import { GatewayClient, type GatewayEventSource } from "../context/gateway-client"
 import type { GatewayEvent } from "../context/wire"
 
 /** Minimal surface consumers depend on. GatewayClient satisfies this. */
@@ -16,6 +16,7 @@ export interface Gateway extends EventEmitter {
   drain(): void
   kill(): void
   tail(n?: number): string
+  diagnose?(ev: GatewayEvent, source?: GatewayEventSource): void
   readonly ready: boolean
 }
 
@@ -53,9 +54,11 @@ export const GatewayProvider = ({ client, children }: { client?: Gateway; childr
     }
     c.on("event", onEvent)
     c.on("exit", onExit)
+    let dead = false
     c.start()
-    c.drain()
+    queueMicrotask(() => { if (!dead) c.drain() })
     return () => {
+      dead = true
       c.off("event", onEvent)
       c.off("exit", onExit)
       if (retry.current.timer) clearTimeout(retry.current.timer)

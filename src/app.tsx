@@ -1,8 +1,10 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/react"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { Profiler, useState, useEffect, useRef, useCallback, useMemo, useReducer, useSyncExternalStore } from "react"
 import * as perf from "./utils/perf"
 import { hasInterp, interpolate } from "./utils/interpolate"
-import { GatewayProvider, useGateway, useGatewayRestart, type Gateway } from "./context/gateway"
+import { GatewayProvider, useGateway, type Gateway } from "./context/gateway"
 import type { SessionInfo, ImageAttachResponse, ImageDetachResponse } from "./context/wire"
 import type { Message, Usage } from "./types/message"
 import { text as msgText } from "./types/message"
@@ -58,6 +60,7 @@ import { sessionCapabilities } from "./app/sessionCapabilities"
 import { useGitBranch } from "./utils/git"
 import type { HermPlugin } from "./plugins/types"
 import { useMessageActions } from "./app/useMessageActions"
+import { backend } from "./context/backend-contract"
 
 type AppProps = {
   initialTheme?: string
@@ -67,31 +70,69 @@ type AppProps = {
   plugins?: ReadonlyArray<HermPlugin>
 }
 
+type Runtime = {
+  home: string
+  seq: number
+  launch: Launch
+}
+
 const BUSY_RE = /session busy|waiting for model response/i
+const profileHome = () => process.env.HERMES_HOME || join(process.env.HOME || homedir(), ".hermes")
 
 export const App = (props: AppProps) => (
   <ThemeProvider initial={props.initialTheme}>
-    <GatewayProvider client={props.gateway}>
-      <ToastProvider>
-        <KeysProvider overrides={props.keyOverrides}>
-          <DialogProvider>
-            <CommandProvider>
-              <PluginProvider plugins={props.plugins}>
-                <BackgroundProvider>
-                  <AppInner launch={props.launch ?? { mode: "new" }} />
-                </BackgroundProvider>
-              </PluginProvider>
-            </CommandProvider>
-          </DialogProvider>
-        </KeysProvider>
-      </ToastProvider>
-    </GatewayProvider>
+    <ToastProvider>
+      <KeysProvider overrides={props.keyOverrides}>
+        <AppShell {...props} />
+      </KeysProvider>
+    </ToastProvider>
   </ThemeProvider>
 )
 
-const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
+const AppShell = (props: AppProps) => {
+  const toast = useToast()
+  const [runtime, setRuntime] = useState<Runtime>(() => ({
+    home: profileHome(),
+    seq: 0,
+    launch: props.launch ?? { mode: "new" },
+  }))
+  const current = useRef(runtime.home); current.current = runtime.home
+
+  const switchProfile = useCallback((newHome: string, name: string) => {
+    const prev = current.current
+    try {
+      rehome(newHome)
+    } catch (err) {
+      try { rehome(prev) } catch { /* best-effort rollback to the last coherent home */ }
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.show({ variant: "error", message: `Profile switch failed: ${msg}` })
+      return
+    }
+    current.current = newHome
+    setRuntime(r => ({ home: newHome, seq: r.seq + 1, launch: { mode: "new", splash: true } }))
+    toast.show({ variant: "info", message: `Switching to '${name}'…` })
+  }, [toast])
+
+  return (
+    <GatewayProvider key={`${runtime.home}:${runtime.seq}`} client={props.gateway}>
+      <DialogProvider>
+        <CommandProvider>
+          <PluginProvider plugins={props.plugins}>
+            <BackgroundProvider>
+              <AppInner launch={runtime.launch} onSwitchProfile={switchProfile} />
+            </BackgroundProvider>
+          </PluginProvider>
+        </CommandProvider>
+      </DialogProvider>
+    </GatewayProvider>
+  )
+}
+
+const AppInner = ({ launch: launch0, onSwitchProfile }: {
+  launch: Launch
+  onSwitchProfile: (newHome: string, name: string) => void
+}) => {
   const gw = useGateway()
-  const gwRestart = useGatewayRestart()
   const dialog = useDialog()
   const dialogOpen = useDialogOpen()
   const themeCtx = useTheme()
@@ -111,7 +152,6 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const [starting, setStarting] = useState(false)
   const startRef = useRef(starting); startRef.current = starting
   const active = turn.streaming || starting
-  const capabilities = sessionCapabilities({ sid, ready, streaming: active })
   const [tab, setTab] = useState(CHAT_TAB)
   // Sub-tab per group — Chat has none, so key 0 is unused.
   // Defensive clamp lives inside each group (SessionsGroup/Automation/
@@ -132,6 +172,15 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const [hideSidebar, setHideSidebar] = useState(false)
   const [usage, setUsage] = useState<Usage | undefined>(undefined)
   const [info, setInfo] = useState<SessionInfo | null>(null)
+  const [contract, setContract] = useState(() => backend.backendContract(null))
+  const recordInfo = useCallback((next: SessionInfo | null) => {
+    setInfo(next)
+    setContract(prev => {
+      const state = backend.backendContract(next)
+      return state.reason === "missing" && prev.supported ? prev : state
+    })
+  }, [])
+  const capabilities = sessionCapabilities({ sid, ready, streaming: active, contract })
   const [title, setTitle] = useState("")
   const caption = title.trim()
   const titleRef = useRef(caption); titleRef.current = caption
@@ -392,7 +441,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
 
   const stream = useStream({
     dispatch, session, launchRef, sidRef, sessionStart, goalHook,
-    setSid, setDurable, setInfo, setReady, setTitle, setBusy, setStarting, setUsage, setStatus, setSkin, setErrorPulse, settle,
+    setSid, setDurable, setInfo: recordInfo, setReady, setTitle, setBusy, setStarting, setUsage, setStatus, setSkin, setSplash, setErrorPulse, settle,
     onVoiceStatus: state => {
       voice.setRecording(state === "listening" || state === "recording")
       voice.setProcessing(state === "transcribing" || state === "processing")
@@ -446,7 +495,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       setSid(r.id)
       setDurable(r.key)
       launchRef.current = { mode: "resume", sid: r.key, splash: false }
-      if (r.info) { setInfo(r.info); setUsage(r.info.usage) }
+      if (r.info) { recordInfo(r.info); setUsage(r.info.usage) }
       setReady(true)
       setStarting(false)
       setStatus("")
@@ -483,7 +532,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       setDurable(res.key)
       launchRef.current = { mode: "resume", sid: res.key, splash: false }
       if (res.info) {
-        setInfo(res.info)
+        recordInfo(res.info)
         setUsage(res.info.usage)
       }
       setReady(true)
@@ -533,7 +582,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       setDurable(res.key)
       launchRef.current = { mode: "resume", sid: res.key, splash: false }
       if (res.info) {
-        setInfo(res.info)
+        recordInfo(res.info)
         setUsage(res.info.usage)
       }
       sessionStart.current = res.startedAt ?? Date.now()
@@ -559,32 +608,6 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       setSwitching(false)
     }
   }, [reset, session, goToTab, toast, gw])
-  // Rebind every HERMES_HOME reader, respawn the gateway subprocess
-  // under the new env, and re-run the boot path. prefs.reload (inside
-  // rehome) retints theme/eikon/keys via usePref; home.reset repaints
-  // tabs. The session is NOT preserved — it belongs to the old
-  // profile's state.db. Confirm step lives in the Agents tab.
-  const switchProfile = useCallback((newHome: string, name: string) => {
-    voice.reset()
-    rehome(newHome)
-    reset()
-    gw.setSession("")
-    setSid("")
-    setDurable("")
-    setInfo(null)
-    setSkin(deriveSkin(undefined))
-    // Fresh gateway boots behind the splash (same as cold launch); the
-    // respawned process emits gateway.ready → session.info → onSend
-    // dismisses. `summoned` suppresses the continue-prompt — the
-    // outgoing profile's lastReal() is the wrong db.
-    summoned.current = true
-    setSplash(true)
-    launchRef.current = { mode: "new", splash: true }
-    toast.show({ variant: "info", message: `Switching to '${name}'…` })
-    goToTab(CHAT_TAB)
-    gwRestart("new")
-  }, [reset, goToTab, gwRestart, toast, gw])
-
   const loadEikon = useCallback((path: string) => {
     try { setEikon(parseEikonFile(path)) }
     catch { setEikon(undefined) }
@@ -627,7 +650,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
   const slash = useSlash({
     dispatch, session, turnRef, queueRef, sendRef, composer, summoned, undone,
     capabilities, info, sid, resumeId: durable || sid, title: caption, skin,
-    setQueue, setFocusRegion, setSplash, setAttachments: updateAttachments, setInfo, setUsage, setTitle,
+    setQueue, setFocusRegion, setSplash, setAttachments: updateAttachments, setInfo: recordInfo, setUsage, setTitle,
     newSession, switchSession, activateSession, rewind, goTo, attachClipboard, voiceToggle: voice.toggle,
   })
   const send = useCallback(async (raw: string) => {
@@ -724,6 +747,14 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
       })
   }, [gw, slash, toast, updateAttachments])
   sendRef.current = send
+
+  const blocked = useCallback(() => {
+    const msg = capabilities.contractMessage
+    if (!msg) return
+    const text = `${msg} Blocked prompt.submit.`
+    dispatch({ kind: "system", text: `submit failed: ${text}` })
+    toast.show({ variant: "error", message: text })
+  }, [capabilities.contractMessage, toast])
 
   // Shell mode submit — `shell.exec` is a plain subprocess (no pty,
   // 30s cap, gateway cwd) with detect_dangerous_command blocklist.
@@ -932,7 +963,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
         case AUTOMATION_TAB: return <Automation focused={contentFocused}
                                                 sub={subTabs[AUTOMATION_TAB] ?? 0}
                                                 setSub={autoSub}
-                                                sessionId={sid} onSwitchProfile={switchProfile} />
+                                                sessionId={sid} onSwitchProfile={onSwitchProfile} />
         case CONFIG_TAB: return <ConfigGroup focused={contentFocused}
                                              sub={subTabs[CONFIG_TAB] ?? 0}
                                              setSub={cfgSub} />
@@ -1002,6 +1033,7 @@ const AppInner = ({ launch: launch0 }: { launch: Launch }) => {
                 onAttachClipboard={attachClipboard}
                 onEnqueue={onEnqueue}
                 onDequeue={dequeue}
+                onSubmitBlocked={blocked}
                 onDirty={setComposing}
                 onEmptyEnter={onEmptyEnter}
               />

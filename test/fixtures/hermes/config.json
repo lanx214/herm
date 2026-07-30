@@ -1,0 +1,22 @@
+{
+  "canonical": {
+    "approval_mode": "smart",
+    "approval_modes": [
+      "manual",
+      "smart",
+      "off"
+    ],
+    "gateway_timeout": 1800
+  },
+  "metadata": {
+    "generated_by": "scripts/gen-hermes-fixtures.ts",
+    "generation_command": "bun scripts/gen-hermes-fixtures.ts --agent-root <producer-root>",
+    "kind": "config",
+    "producer_manifest": "src/compat/hermes-manifest.ts",
+    "source_files": [
+      "hermes_cli/config.py",
+      "tui_gateway/server.py"
+    ],
+    "source_revision": "4da7b9ee029c6ece2eb7992fc27dbcd086982c84"
+  }
+}

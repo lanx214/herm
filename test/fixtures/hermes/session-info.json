@@ -1,0 +1,76 @@
+{
+  "frame": {
+    "jsonrpc": "2.0",
+    "method": "event",
+    "params": {
+      "payload": {
+        "approval_mode": "smart",
+        "branch": "fixture-branch",
+        "credential_warning": null,
+        "cwd": "/fixture/project",
+        "desktop_contract": 4,
+        "fast": false,
+        "mcp_servers": [],
+        "model": "fixture-model",
+        "personality": "default",
+        "profile_name": "fixture-profile",
+        "project": {
+          "id": "p_fixture",
+          "name": "Fixture",
+          "primary_path": "/fixture/project",
+          "slug": "fixture"
+        },
+        "provider": "fixture-provider",
+        "reasoning_effort": "medium",
+        "release_date": "1970-01-01",
+        "running": false,
+        "service_tier": "standard",
+        "skills": {
+          "devops": [
+            "kanban-worker"
+          ],
+          "software": [
+            "systematic-debugging"
+          ]
+        },
+        "stored_session_id": "session-fixture-0001",
+        "system_prompt": "fixture system prompt",
+        "title": "Fixture Session",
+        "tools": {
+          "core": [
+            "read_file",
+            "terminal"
+          ],
+          "kanban": [
+            "kanban_show"
+          ]
+        },
+        "update_behind": null,
+        "update_command": "",
+        "usage": {
+          "compressions": 0,
+          "context_max": 1000,
+          "context_percent": 1.8,
+          "context_used": 18,
+          "input": 11,
+          "output": 7,
+          "total": 18
+        },
+        "version": "0.0.0-fixture",
+        "yolo": false
+      },
+      "session_id": "session-fixture-0001",
+      "type": "session.info"
+    }
+  },
+  "metadata": {
+    "generated_by": "scripts/gen-hermes-fixtures.ts",
+    "generation_command": "bun scripts/gen-hermes-fixtures.ts --agent-root <producer-root>",
+    "kind": "session.info",
+    "producer_manifest": "src/compat/hermes-manifest.ts",
+    "source_files": [
+      "tui_gateway/server.py"
+    ],
+    "source_revision": "4da7b9ee029c6ece2eb7992fc27dbcd086982c84"
+  }
+}

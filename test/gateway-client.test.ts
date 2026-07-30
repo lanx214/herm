@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs"
 import { delimiter, join, resolve } from "path"
 import { tmpdir } from "os"
 import { GatewayClient, gatewayUrl, hermesAgentRoot, python, websocketUrl } from "../src/context/gateway-client"
+import type { GatewayEvent } from "../src/context/wire"
 
 class FakeSocket extends EventTarget {
   static list: FakeSocket[] = []
@@ -135,6 +136,20 @@ describe("python", () => {
 })
 
 describe("GatewayClient", () => {
+  test("unsupported backend contract blocks mutations before transport writes", async () => {
+    const prev = Bun.spawn
+    let spawns = 0
+    ;(Bun as unknown as { spawn: typeof Bun.spawn }).spawn = (() => { spawns++; throw new Error("should not spawn") }) as typeof Bun.spawn
+    const gw = new GatewayClient()
+
+    try {
+      await expect(gw.request("prompt.submit", { text: "hi" })).rejects.toThrow("Blocked prompt.submit")
+      expect(spawns).toBe(0)
+    } finally {
+      ;(Bun as unknown as { spawn: typeof Bun.spawn }).spawn = prev
+    }
+  })
+
   test("synchronous spawn failure reports exit without throwing", () => {
     const prev = Bun.spawn
     ;(Bun as unknown as { spawn: typeof Bun.spawn }).spawn = (() => {
@@ -310,7 +325,7 @@ describe("GatewayClient", () => {
     const gw = new GatewayClient()
     try {
       gw.start()
-      const old = gw.request("test.pending").then(
+      const old = gw.request("config.get", { key: "pending" }).then(
         () => "resolved",
         (e: Error) => e.message,
       )
@@ -484,6 +499,32 @@ describe("GatewayClient websocket attach mode", () => {
     gw.kill()
   })
 
+  test("accepts producer-derived gateway event envelope fixtures", async () => {
+    process.env.HERM_GATEWAY_URL = "ws://gateway.test/api/ws?token=abc"
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    const fixture = await Bun.file(new URL("fixtures/hermes/gateway-events.json", import.meta.url)).json() as {
+      frames: Array<{ jsonrpc: string; method: string; params: { type: string } }>
+    }
+    const gw = new GatewayClient()
+    const events: string[] = []
+
+    gw.on("event", ev => events.push(ev.type))
+    gw.drain()
+    gw.start()
+    const ws = FakeSocket.list[0]!
+    ws.open()
+    await Bun.sleep(0)
+    for (const frame of fixture.frames) {
+      expect(frame.jsonrpc).toBe("2.0")
+      expect(frame.method).toBe("event")
+      ws.message(JSON.stringify(frame))
+    }
+
+    expect(events).toEqual(fixture.frames.map(frame => frame.params.type))
+    expect(gw.ready).toBe(true)
+    gw.kill()
+  })
+
   test("socket close emits exit and reconnects with the reusable URL", () => {
     process.env.HERM_GATEWAY_URL = "ws://gateway.test/api/ws?internal=abc"
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
@@ -532,5 +573,62 @@ describe("GatewayClient websocket attach mode", () => {
       .toBe("ws://127.0.0.1:9119/api/ws?token=abc")
     expect(() => websocketUrl("ftp://gateway.test/?token=abc"))
       .toThrow("unsupported gateway URL protocol: ftp:")
+  })
+})
+
+const ev = (value: unknown) => value as GatewayEvent
+
+describe("GatewayClient diagnostics", () => {
+  test("unknown gateway events enter structured redacted diagnostics", () => {
+    const gw = new GatewayClient()
+    gw.diagnose(ev({
+      type: "future.event",
+      contract_version: 4,
+      payload: {
+        text: "visible",
+        token: "SECRET_TOKEN_SENTINEL",
+        nested: { password: "SECRET_PASSWORD_SENTINEL" },
+      },
+    }), "stdio")
+
+    const log = gw.tail(5)
+    expect(log).toContain("[event unknown]")
+    expect(log).toContain("type=future.event")
+    expect(log).toContain("source=stdio")
+    expect(log).toContain("contract=4")
+    expect(log).toContain("count=1")
+    expect(log).toContain("visible")
+    expect(log).toContain("[redacted]")
+    expect(log).not.toContain("SECRET_TOKEN_SENTINEL")
+    expect(log).not.toContain("SECRET_PASSWORD_SENTINEL")
+  })
+
+  test("repeated unknown events update the first diagnostic with aggregate count", () => {
+    const gw = new GatewayClient()
+    gw.diagnose(ev({ type: "future.repeat", payload: { marker: "FIRST_PAYLOAD" } }), "websocket")
+    gw.diagnose(ev({ type: "future.repeat", payload: { marker: "SECOND_PAYLOAD" } }), "websocket")
+    gw.diagnose(ev({ type: "future.repeat", payload: { marker: "THIRD_PAYLOAD" } }), "websocket")
+
+    const rows = gw.tail(10).split("\n").filter(Boolean)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain("count=3")
+    expect(rows[0]).toContain("FIRST_PAYLOAD")
+    expect(rows[0]).not.toContain("SECOND_PAYLOAD")
+    expect(rows[0]).not.toContain("THIRD_PAYLOAD")
+  })
+
+  test("known intentionally ignored events are not classified as unknown", () => {
+    const gw = new GatewayClient()
+    gw.diagnose(ev({ type: "session.title", payload: { session_id: "s", title: "t" } }), "control")
+    gw.diagnose(ev({ type: "voice.status", payload: { state: "idle" } }), "control")
+    expect(gw.tail(10)).not.toContain("[event unknown]")
+  })
+
+  test("diagnostics cannot crash on circular payloads", () => {
+    const payload: Record<string, unknown> = { text: "safe" }
+    payload.self = payload
+    const gw = new GatewayClient()
+    expect(() => gw.diagnose(ev({ type: "future.circular", payload }), "control")).not.toThrow()
+    expect(gw.tail(5)).toContain("[circular]")
   })
 })
