@@ -719,11 +719,11 @@ describe("Sessions tab", () => {
     const size = () => {
       const row = box(t, "sess-p-sid-long")
       const cells = row.getChildren().filter((node): node is BoxRenderable => node instanceof BoxRenderable)
-      const title = cells[1]
-      const source = cells[2]
+      const title = cells[2]
+      const source = cells[3]
       const value = walk(title).find((node): node is TextRenderable =>
         node instanceof TextRenderable && node.plainText.includes(long))
-      expect(cells).toHaveLength(7)
+      expect(cells).toHaveLength(8)
       expect(value).toBeDefined()
       expect(row.height).toBe(1)
       expect(title.height).toBe(1)
@@ -766,8 +766,8 @@ describe("Sessions tab", () => {
     })
     expect(head).toBeDefined()
     const headers = cells(head!)
-    expect(data).toHaveLength(7)
-    expect(headers).toHaveLength(7)
+    expect(data).toHaveLength(8)
+    expect(headers).toHaveLength(8)
 
     for (let i = 0; i < 6; i++) {
       expect(headers[i].screenX).toBe(data[i].screenX)
@@ -1028,8 +1028,8 @@ describe("Sessions tab — tree expansion", () => {
     await until(t, () => t.frame().includes("First subagent"))
 
     expect(t.frame()).not.toContain("Session Detail")
-    expect(t.frame()).toContain("▸ Parent with subs")
-    expect(t.frame()).toContain("└─First subagent")
+    expect(t.frame()).toContain("▸ ·Parent with subs")
+    expect(t.frame()).toContain("└─·First subagent")
     expect(t.frame()).toContain("2 subs")
 
     act(() => t.keys.pressArrow("down"))
@@ -1143,15 +1143,15 @@ describe("Sessions tab — tree expansion", () => {
 
     // Walk down through the children to OTHER, then back up one step.
     for (let i = 0; i < 3; i++) { act(() => t.keys.pressArrow("down")); await t.settle() }
-    expect(t.frame()).toContain("▸ Other parent")
+    expect(t.frame()).toContain("▸ ·Other parent")
     expect(t.frame()).not.toContain("First subagent")
 
     act(() => t.keys.pressArrow("up")); await t.settle()
     // Anchor moved to PARENT in the collapsed layout; the Space-armed
     // branch is visible again with sel on the parent — not its last
     // child. Simpler than entering children from below.
-    expect(t.frame()).toContain("▸ Parent with subs")
-    expect(t.frame()).toContain("└─First subagent")
+    expect(t.frame()).toContain("▸ ·Parent with subs")
+    expect(t.frame()).toContain("└─·First subagent")
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Load session?"))
     await act(async () => { await t.keys.typeText("y") })

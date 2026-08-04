@@ -250,7 +250,7 @@ describe("queued prompt submit", () => {
     await act(async () => { await t.keys.typeText("/sessions") })
     act(() => t.keys.pressEnter())
     await until(t, () => t.frame().includes("Live A"))
-    const live = loc(t, "▸ Live A")
+    const live = loc(t, "▸ ·Live A")
     await act(async () => { await t.mouse.click(live.x, live.y) })
     await until(t, () => gw.last("session.activate")?.params.session_id === "live-a" && t.frame().includes("live seed"))
     await t.settle()

@@ -74,6 +74,8 @@ export const DEFAULTS = {
   "sessions.prev":     def("left",                 "Previous source filter",             "sessions"),
   "sessions.next":     def("right",                "Next source filter",                 "sessions"),
   "sessions.sort":     def("s",                    "Toggle sort",                        "sessions"),
+  "sessions.star":     def("*",                    "Star/unstar session",                "sessions"),
+  "sessions.folder":   def("f",                    "Set folder",                         "sessions"),
   "agents.kill":       def("k",                    "Kill subagent",                      "agents"),
   "agents.history":    def("h",                    "Spawn history",                      "agents"),
   "agents.install":    def("i",                    "Install distribution",               "agents"),

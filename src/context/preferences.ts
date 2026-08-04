@@ -75,6 +75,12 @@ export type SessionsPrefs = {
   /** List ordering. "active" (default) = by last message timestamp;
    *  "started" = by session start time. */
   sort?: "active" | "started"
+  /** Session ids starred for quick access. A compression tip keeps
+   *  its lineage root's star (see Sessions.tsx isStarred). */
+  starred?: string[]
+  /** session_id → folder name. Folders are implicit — any non-empty
+   *  name creates one; removing the entry un-files the session. */
+  folders?: Record<string, string>
 }
 
 /** Persisted Kanban-tab state. Keyed by board slug so masks on one

@@ -121,6 +121,39 @@ const FilterRow = memo((p: {
     </scrollbox>
   )
 })
+
+// Second filter row: star + manual folders. Orthogonal to the source
+// row above — both dimensions AND together (source:tui + folder:研究
+// shows only TUI sessions filed under 研究). "all" is the no-op state
+// so the default view is byte-for-byte identical to stock herm.
+const FolderRow = memo((p: {
+  view: string
+  setView: (v: string) => void
+  starred: number
+  folders: Array<[string, number]>
+  onNew: () => void
+}) => {
+  const theme = useTheme().theme
+  const opts: Array<{ id: string; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "starred", label: `★ Starred ${p.starred}` },
+    ...p.folders.map(([name, n]) => ({ id: `f:${name}`, label: `📁 ${name} ${n}` })),
+  ]
+  return (
+    <scrollbox scrollX height={1} paddingLeft={2}
+               horizontalScrollbarOptions={HBAR} contentOptions={ROW}>
+      {opts.map((v, i) => (
+        <FilterChip key={v.id} id={`sessions-folder-${v.id}`} label={v.label}
+          state={p.view === v.id ? "in" : "off"} gap={i === 0 ? 0 : 1}
+          color={theme.accent} textColor={theme.accent}
+          onMouseDown={() => p.setView(v.id)} />
+      ))}
+      <FilterChip id="sessions-folder-new" label="+ 新建" state="off"
+        gap={1} color={theme.primary} textColor={theme.primary}
+        onMouseDown={p.onNew} />
+    </scrollbox>
+  )
+})
 //
 // Purpose: decide whether to load a session without replacing the
 // current chat. So: conversation only. Tool chatter is collapsed to
@@ -410,6 +443,7 @@ const HeaderRow = memo((props: { sort: Sort; onSort: (s: Sort) => void }) => {
   return (
     <Hdr>
       <Col w={2} fg={fg}>{"  "}</Col>
+      <Col w={1} fg={fg}>{" "}</Col>
       <Col grow fg={fg} bold>Title</Col>
       <Col w={9} fg={fg} bold>Source</Col>
       <Col w={8} fg={by === "started" ? on : fg} bold
@@ -433,10 +467,11 @@ type RowCbs = {
   onActivate: (i: number) => void
   onHover: (i: number) => void
   onDelete: (i: number) => void
+  onStar: (i: number) => void
 }
 
 const Item = memo((props: {
-  id: string; row: Row; idx: number; selected: boolean; indent?: boolean; locked?: boolean
+  id: string; row: Row; idx: number; selected: boolean; indent?: boolean; locked?: boolean; starred: boolean
 } & RowCbs) => {
   const theme = useTheme().theme
   const { row: r, idx: i } = props
@@ -455,6 +490,12 @@ const Item = memo((props: {
          backgroundColor={props.selected ? theme.backgroundElement : undefined}
          onMouseDown={() => props.onActivate(i)} onMouseMove={() => props.onHover(i)}>
       <Col w={2} fg={props.selected ? theme.primary : (muted ?? theme.text)}>{leader}</Col>
+      <box width={1} flexShrink={0}
+           onMouseDown={(e) => { e.stopPropagation(); props.onStar(i) }}>
+        <text><span fg={props.starred ? theme.warning : theme.textMuted}>
+          {props.starred ? "★" : "·"}
+        </span></text>
+      </box>
       <Marquee grow active={props.selected}
                fg={props.selected ? theme.accent : (muted ?? theme.text)}
                bold={props.selected}
@@ -568,9 +609,20 @@ export const Sessions = memo((props: Props) => {
   // Persisted, user-toggleable list ordering. roots() returns the
   // producer's active window; we re-sort here so the choice can flip live
   // without re-hitting state.db.
-  const sort: Sort = prefs.usePref("sessions")?.sort ?? "active"
-  const setSort = useCallback((s: Sort) => prefs.set("sessions", { sort: s }), [])
+  const sPrefs = prefs.usePref("sessions") ?? {}
+  const sort: Sort = sPrefs.sort ?? "active"
+  // Merge-write: prefs.set replaces the whole `sessions` key, so a
+  // naive `set("sessions", { sort })` would drop starred/folders.
+  const setSessionsPref = useCallback((patch: Partial<SessionsPrefs>) => {
+    prefs.set("sessions", { ...(prefs.get("sessions") ?? {}), ...patch })
+  }, [])
+  const setSort = useCallback((s: Sort) => setSessionsPref({ sort: s }), [setSessionsPref])
+  const starred = useMemo(() => new Set(sPrefs.starred ?? []), [sPrefs.starred])
+  const folders = useMemo(() => sPrefs.folders ?? {}, [sPrefs.folders])
   const [view, setView] = useState<string>(HOME)
+  // Second filter dimension (star + manual folders). "all" = no filter;
+  // "starred" = ★ view; "f:<name>" = one folder. ANDs with `view`.
+  const [folderView, setFolderView] = useState<string>("all")
   const active = useMemo(() => [...liveRows].sort((a, b) =>
     Number(Boolean(b.live?.current)) - Number(Boolean(a.live?.current)) ||
     ((b.live?.last_active ?? b.started_at) - (a.live?.last_active ?? a.started_at))), [liveRows])
@@ -595,15 +647,46 @@ export const Sessions = memo((props: Props) => {
   }, [sorted])
   const cur = views.find(v => v.id === view) ?? views[0]
   const chosen = cur?.id ?? view
+  // Star/folder helpers. Compression tips inherit their lineage root's
+  // star/folder — compaction changes the visible session id, so keying
+  // on id alone would silently drop stars mid-conversation.
+  const isStarred = useCallback((r: Row): boolean =>
+    starred.has(r.id) || (r.detail?.lineage_root_id != null && starred.has(r.detail.lineage_root_id)),
+    [starred])
+  const folderOf = useCallback((r: Row): string | undefined =>
+    folders[r.id] ?? (r.detail?.lineage_root_id != null ? folders[r.detail.lineage_root_id] : undefined),
+    [folders])
   const hist = useMemo(() => {
     if (!cur) return []
-    if (cur.aggregate === HOME) return sorted.filter(r => src(r) !== "cron")
-    return sorted.filter(r => src(r) === cur.source)
-  }, [sorted, cur])
+    const inFolder = (r: Row): boolean => {
+      if (folderView === "all") return true
+      if (folderView === "starred") return isStarred(r)
+      return folderOf(r) === folderView.slice(2)
+    }
+    if (cur.aggregate === HOME) return sorted.filter(r => src(r) !== "cron" && inFolder(r))
+    return sorted.filter(r => src(r) === cur.source && inFolder(r))
+  }, [sorted, cur, folderView, isStarred, folderOf])
   const listed = useMemo(() => [...active, ...hist], [active, hist])
+  // Counts for the second filter row (starred + per-folder). Derived
+  // from the pre-view `sorted` so counts ignore the source filter.
+  const folderStats = useMemo(() => {
+    let star = 0
+    const byName = new Map<string, number>()
+    for (const r of sorted) {
+      if (isStarred(r)) star++
+      const f = folderOf(r)
+      if (f) byName.set(f, (byName.get(f) ?? 0) + 1)
+    }
+    return { star, folders: [...byName.entries()].sort((a, b) => a[0].localeCompare(b[0])) }
+  }, [sorted, isStarred, folderOf])
   useEffect(() => {
     if (views.length > 0 && !views.some(v => v.id === view)) setView(views[0].id)
   }, [views, view])
+  // Drop a folder filter whose folder no longer has any sessions.
+  useEffect(() => {
+    const known = new Set(["all", "starred", ...folderStats.folders.map(([n]) => `f:${n}`)])
+    if (!known.has(folderView)) setFolderView("all")
+  }, [folderView, folderStats.folders])
   // Selection is tracked by row identity so that collapsing children
   // (which changes the flat index of every row below) never lands sel
   // on the wrong row. The numeric index consumers use (handleListKey,
@@ -902,11 +985,62 @@ export const Sessions = memo((props: Props) => {
         })
       if (!done) return
       home.invalidate("recentSessions")
+      // Drop any star/folder on the deleted session (and its lineage
+      // root, if the deleted row was a compression tip).
+      if (starred.has(r.id) || folders[r.id] || (r.detail?.lineage_root_id && starred.has(r.detail.lineage_root_id))) {
+        const drop = r.detail?.lineage_root_id ?? r.id
+        const nextStarred = (sPrefs.starred ?? []).filter(x => x !== r.id && x !== drop)
+        const nextFolders = { ...folders }
+        delete nextFolders[r.id]
+        if (drop !== r.id) delete nextFolders[drop]
+        setSessionsPref({ starred: nextStarred, folders: nextFolders })
+      }
       toast.show({ variant: "success", message: "Session deleted" })
       void load()
     })
-  }, [gw, dialog, toast, load])
+  }, [gw, dialog, toast, load, starred, folders, setSessionsPref])
   confirmDeleteRef.current = confirmDelete
+
+  // Star writes to the lineage root id so a compression tip inherits
+  // it (isStarred/folderOf read root id via lineage_root_id).
+  const toggleStar = useCallback((i: number) => {
+    const v = live.current.visible[i]
+    if (!v) return
+    const r = v.row
+    const key = r.detail?.lineage_root_id ?? r.id
+    const was = starred.has(key)
+    const next = new Set(starred)
+    if (was) next.delete(key); else next.add(key)
+    setSessionsPref({ starred: [...next] })
+    toast.show({ variant: "success", message: was ? "Unstarred" : "Starred", duration: 800 })
+  }, [starred, setSessionsPref, toast])
+
+  const setFolder = useCallback(async (i: number) => {
+    const v = live.current.visible[i]
+    if (!v) return
+    const r = v.row
+    const key = r.detail?.lineage_root_id ?? r.id
+    const name = await openTextPrompt(dialog, {
+      title: `Folder: ${trunc(label(r), 42)}`,
+      label: "Folder (empty = unfile)",
+      initial: folderOf(r) ?? "",
+    })
+    if (name === null) return
+    const next = { ...folders }
+    if (name.trim()) next[key] = name.trim()
+    else delete next[key]
+    setSessionsPref({ folders: next })
+    toast.show({ variant: "success", message: name.trim() ? `Filed to ${name.trim()}` : "Removed from folder", duration: 800 })
+  }, [dialog, folders, folderOf, setSessionsPref, toast])
+
+  const newFolder = useCallback(async () => {
+    const name = await openTextPrompt(dialog, {
+      title: "New folder", label: "Folder name", initial: "",
+    })
+    if (name === null || !name.trim()) return
+    setFolderView(`f:${name.trim()}`)
+    toast.show({ variant: "info", message: `Folder '${name.trim()}' created — press f on a session to file it`, duration: 3000 })
+  }, [dialog, toast])
 
   const rename = useCallback(async () => {
     const v = live.current.visible[sel]
@@ -989,6 +1123,8 @@ export const Sessions = memo((props: Props) => {
     })
     if (matched) return
     if (keys.match("sessions.sort", key)) return setSort(sort === "active" ? "started" : "active")
+    if (keys.match("sessions.star", key)) return void toggleStar(sel)
+    if (keys.match("sessions.folder", key)) return void setFolder(sel)
     if (keys.match("sessions.rename", key)) return void rename()
     const prev = keys.match("sessions.prev", key)
     const next = keys.match("sessions.next", key)
@@ -1061,7 +1197,7 @@ export const Sessions = memo((props: Props) => {
                   ))
                 : visible.map((v, i) => (
                     <box key={`${v.row.id}-${v.indent ? "c" : "p"}`} flexDirection="column"
-                         height={1 + (top(i) ? 1 : 0) + (tabs(i) ? 2 : 0) + (gap(i) ? 1 : 0)}>
+                         height={1 + (top(i) ? 1 : 0) + (tabs(i) ? 3 : 0) + (gap(i) ? 1 : 0)}>
                       {top(i) ? (
                         <box height={1} paddingLeft={2}>
                           <text fg={theme.primary}>{active.length === 1 ? "Active Session" : "Active Sessions"}</text>
@@ -1070,18 +1206,25 @@ export const Sessions = memo((props: Props) => {
                       {gap(i) ? <box height={1} /> : null}
                       {tabs(i) ? <>
                         <FilterRow views={views} view={chosen} setView={setView} />
+                        <FolderRow view={folderView} setView={setFolderView}
+                                   starred={folderStats.star} folders={folderStats.folders}
+                                   onNew={newFolder} />
                         <box height={1} />
                       </> : null}
                       <Item id={rowId(i)} idx={i}
                         row={v.row} selected={i === sel} indent={v.indent}
                         locked={v.row.id === props.currentId}
-                        onActivate={rowActivate} onHover={rowHover} onDelete={rowDelete} />
+                        starred={isStarred(v.row)}
+                        onActivate={rowActivate} onHover={rowHover} onDelete={rowDelete} onStar={toggleStar} />
                     </box>
                   ))}
               {!searching && views.length > 0 && hist.length === 0 ? (
-                <box key="sessions-empty-filter" flexDirection="column" height={3 + (active.length > 0 ? 1 : 0)}>
+                <box key="sessions-empty-filter" flexDirection="column" height={4 + (active.length > 0 ? 1 : 0)}>
                   {active.length > 0 ? <box height={1} /> : null}
                   <FilterRow views={views} view={chosen} setView={setView} />
+                  <FolderRow view={folderView} setView={setFolderView}
+                             starred={folderStats.star} folders={folderStats.folders}
+                             onNew={newFolder} />
                   <box height={1} />
                   <box height={1} paddingLeft={2}>
                     <text fg={theme.textMuted}>{blank}</text>
@@ -1113,6 +1256,8 @@ export const Sessions = memo((props: Props) => {
           [`${keys.print("list.activate")}/click`, action],
           [keys.print("list.search"), "search"],
           [keys.print("sessions.sort"), `sort: ${sort}`],
+          [keys.print("sessions.star"), "star"],
+          [keys.print("sessions.folder"), "folder"],
           [keys.print("sessions.rename"), "rename"],
           [keys.print("list.delete"), "delete"],
           [keys.print("list.refresh"), "refresh"],
