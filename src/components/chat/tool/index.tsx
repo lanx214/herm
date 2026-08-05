@@ -4,6 +4,8 @@
 import { memo, useMemo } from "react"
 import type { ToolPart as Part } from "../../../types/message"
 import type { DetailMode } from "../../../context/preferences"
+import { useTheme } from "../../../theme"
+import { categorize } from "../../../context/approval-categories"
 import { isDiff } from "../DiffBlock"
 import { InlineTool, type Branch, type Detail } from "./frame"
 import { Subagent } from "./Subagent"
@@ -12,6 +14,16 @@ import { spec } from "./preview"
 const CHARS = 800
 const LINES = 12
 const TRAIL = 8
+
+/** 解析 approval 文本 → {smart: 是否自动放行, cat: 中文类别或 undefined}。 */
+function approvalLabel(note: string | undefined): { smart: boolean; cat?: string } | undefined {
+  if (!note) return undefined
+  const smart = note.includes("smart approval")
+  const m = note.match(/\(([^)]+)\)/)
+  if (!m) return { smart }
+  const cat = categorize(m[1])
+  return { smart, cat: cat ? cat.zh : undefined }
+}
 
 function short(s: string | undefined, n = 120): string {
   if (!s) return ""
@@ -38,12 +50,15 @@ function lines(s: string): number {
 }
 
 const Inline = memo(({ branch, details, tool }: { branch?: Branch; details?: Detail[]; tool: Part }) => {
+  const theme = useTheme().theme
   const s = spec(tool.name)
   const body = tool.preview && !isDiff(tool.preview) ? short(tool.preview) : ""
   const label = s.verb && body ? `${s.verb} ${body}` : body || s.verb || tool.name
+  const appr = approvalLabel(tool.approval)
   return (
     <InlineTool branch={branch} part={tool} complete={!!body || tool.status !== "running"} details={details}>
       {label}
+      {appr ? <span fg={appr.smart ? theme.textMuted : theme.success}>{appr.smart ? " 🛡自动放行" : " ✓已批准"}{appr.cat ? ` · ${appr.cat}` : ""}</span> : null}
     </InlineTool>
   )
 })

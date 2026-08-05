@@ -10,6 +10,7 @@ import { PromptCard, type PromptCardHandle } from "./PromptCard"
 import { ChafaImage } from "../../ui/ChafaImage"
 import { useTheme } from "../../theme"
 import { useSkin } from "../../context/skin"
+import { categorize } from "../../context/approval-categories"
 import { mathify } from "../../utils/math-unicode"
 
 export type { Message }
@@ -35,6 +36,25 @@ function extract(msg: Message): string {
 }
 
 const trunc = (s: string, max: number) => s.length <= max ? s : s.slice(0, max - 1) + "…"
+
+function approvalCatOf(note: string | undefined): string | undefined {
+  if (!note) return undefined
+  const m = note.match(/\(([^)]+)\)/)
+  if (!m) return undefined
+  const cat = categorize(m[1])
+  return cat ? cat.zh : undefined
+}
+
+/** trail 单项：工具名 + 跟随的审批标记（🛡=自动放行 / ✓=人工批准），prompt 显示 ⚠。 */
+function trailItem(p: ToolPart | PromptPart): string {
+  if (p.type === "prompt") return "⚠"
+  const note = p.approval
+  let mark = ""
+  if (note?.includes("smart approval")) mark = "🛡"
+  else if (note?.includes("approved by the user")) mark = "✓"
+  const cat = approvalCatOf(note)
+  return `${p.name}${mark}${cat ? `·${cat}` : ""}`
+}
 
 function mix(a: RGBA, b: RGBA, n = 0.5): RGBA {
   return RGBA.fromValues(
@@ -251,7 +271,7 @@ const AssistantMessage = memo(({ message, streaming, prompt, onPick }: {
           <box flexGrow={1}><text fg={theme.textMuted}>{header}</text></box>
           {trail.length ? (
             <box><text fg={theme.textMuted}>
-              {trunc(trail.map(p => p.type === "tool" ? p.name : "?").join(" · "), 40)}
+              {trunc(trail.map(trailItem).join(" · "), 60)}
             </text></box>
           ) : null}
         </box>

@@ -37,7 +37,7 @@ export type Action =
   | { kind: "tool.start"; id: string; name: string; preview?: string; args?: string }
   | { kind: "tool.progress"; name?: string; preview?: string }
   | { kind: "tool.generating"; name?: string }
-  | { kind: "tool.complete"; id: string; summary?: string; error?: string; inline_diff?: string; duration?: number; result?: string }
+  | { kind: "tool.complete"; id: string; summary?: string; error?: string; inline_diff?: string; duration?: number; result?: string; approval?: string }
   | { kind: "thinking"; text: string; final: boolean; verbose?: boolean }
   | { kind: "subagent"; event: "start" | "thinking" | "tool" | "progress" | "complete"; payload: SubagentPayload }
   | { kind: "prompt"; id: string; req: PromptReq }
@@ -174,6 +174,7 @@ export function turnReducer(state: TurnState, a: Action): TurnState {
           result: error || summary || undefined,
           verboseResult: result || undefined,
           diff: diff || undefined,
+          approval: a.approval || undefined,
         })),
       }
     }

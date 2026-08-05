@@ -201,4 +201,41 @@ describe("message transcript contracts", () => {
     await act(async () => { await t.mouse.pressDown(open.x, open.y) })
     await until(t, () => !t.frame().includes("trace-9"))
   })
+
+  test("trail marks approval per-tool: terminal🛡·脚本 / terminal✓·删除 / prompt ⚠", async () => {
+    const smartMsg: Message = {
+      id: "m1", role: "assistant", timestamp: 0, parts: [
+        { type: "tool", id: "t1", name: "terminal", args: "", status: "done",
+          preview: "python3 -c print(1)", approval: "Command was flagged (script execution via -e/-c flag) and auto-approved by smart approval." },
+      ],
+    }
+    await using t = await mountNode(
+      <box flexDirection="column" width="100%" height="100%">
+        <MessageList messages={[smartMsg]} streaming={false} />
+      </box>,
+      { width: 100, height: 18 },
+    )
+    await until(t, () => t.frame().includes("terminal🛡"))
+    expect(t.frame()).toContain("脚本")
+
+    const userMsg: Message = {
+      id: "m2", role: "assistant", timestamp: 0, parts: [
+        { type: "tool", id: "t2", name: "terminal", args: "", status: "done",
+          preview: "find -delete", approval: "Command required approval (find -delete) and was approved by the user." },
+        { type: "prompt", id: "p1", variant: "approval",
+          req: { variant: "approval", command: "rm x", description: "delete" },
+          answered: { label: "允许这次", ok: true, at: 0 } },
+      ],
+    }
+    const u = await mountNode(
+      <box flexDirection="column" width="100%" height="100%">
+        <MessageList messages={[userMsg]} streaming={false} />
+      </box>,
+      { width: 100, height: 18 },
+    )
+    await until(u, () => u.frame().includes("terminal✓"))
+    expect(u.frame()).toContain("删除")
+    expect(u.frame()).toContain("⚠")
+    u.destroy()
+  })
 })

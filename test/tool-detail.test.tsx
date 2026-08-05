@@ -96,4 +96,37 @@ describe("Tool > detail mode", () => {
     expect(t.frame()).not.toContain("patched result")
     t.destroy()
   })
+
+  test("smart-approval note renders as 🛡自动放行; user approval as ✓已批准", async () => {
+    const smart: ToolPart = {
+      type: "tool", id: "t4", name: "terminal", args: "",
+      preview: "rm -rf /tmp/x", status: "done",
+      approval: "Command was flagged (recursive delete) and auto-approved by smart approval.",
+    }
+    const t = await mount(smart, "expanded")
+    await until(t, () => t.frame().includes("🛡自动放行"))
+    expect(t.frame()).toContain("删除文件/目录")
+    t.destroy()
+
+    const user: ToolPart = {
+      type: "tool", id: "t5", name: "terminal", args: "",
+      preview: "sudo whoami", status: "done",
+      approval: "Command required approval (sudo with privilege flag (stdin/askpass/shell/list)) and was approved by the user.",
+    }
+    const u = await mount(user, "expanded")
+    await until(u, () => u.frame().includes("✓已批准"))
+    u.destroy()
+  })
+
+  test("no approval field → no badge", async () => {
+    const plain: ToolPart = {
+      type: "tool", id: "t6", name: "read_file", args: "",
+      preview: "src/y.ts", status: "done",
+    }
+    const t = await mount(plain, "expanded")
+    await t.settle()
+    expect(t.frame()).not.toContain("自动放行")
+    expect(t.frame()).not.toContain("已批准")
+    t.destroy()
+  })
 })

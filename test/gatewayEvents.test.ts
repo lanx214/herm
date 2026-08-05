@@ -16,6 +16,28 @@ function map(ev: GatewayEvent, side: Partial<Side> = {}) {
 }
 
 describe("mapEvent", () => {
+  test("tool.complete with result.approval → action.approval extracted", () => {
+    const r = map({
+      type: "tool.complete",
+      payload: {
+        tool_id: "t1", name: "terminal", summary: "done",
+        result: { output: "ok", exit_code: 0, approval: "Command was flagged (recursive delete) and auto-approved by smart approval." },
+      },
+    })
+    expect(r.action?.kind).toBe("tool.complete")
+    if (r.action?.kind !== "tool.complete") throw new Error("expected tool.complete action")
+    expect(r.action.approval).toContain("auto-approved by smart approval")
+  })
+
+  test("tool.complete without result.approval → approval undefined", () => {
+    const r = map({
+      type: "tool.complete",
+      payload: { tool_id: "t1", name: "read_file", summary: "ok", result: { output: "x", exit_code: 0 } },
+    })
+    if (r.action?.kind !== "tool.complete") throw new Error("expected tool.complete action")
+    expect(r.action.approval).toBeUndefined()
+  })
+
   test("gateway.ready → onReady, no action", () => {
     const r = map({ type: "gateway.ready" })
     expect(r.action).toBeNull()

@@ -38,6 +38,18 @@ describe("turnReducer", () => {
     expect(parts[2]).toMatchObject({ content: "after", streaming: true })
   })
 
+  test("tool.complete approval note is stored on the tool part", () => {
+    const s = run([
+      { kind: "message.start" },
+      { kind: "tool.start", id: "t1", name: "terminal" },
+      { kind: "tool.complete", id: "t1", summary: "done",
+        approval: "Command was flagged (recursive delete) and auto-approved by smart approval." },
+    ])
+    const parts = last(s).parts
+    const tool = parts.find((p): p is ToolPart => p.type === "tool")
+    expect(tool?.approval).toContain("auto-approved by smart approval")
+  })
+
   test("reference block is committed before aggregator answer", () => {
     const s = run([
       { kind: "message.start" },

@@ -22,6 +22,8 @@ export type ToolPart = {
   verboseResult?: string
   result?: string
   diff?: string
+  /** 审批标记（smart 自动放行 / 用户批准），来自工具结果里的 approval 字段。 */
+  approval?: string
   /** Subagent only — child tool calls accumulated from subagent.tool events. */
   trail?: Array<{ name: string; preview?: string }>
   /** Subagent only — goal text from subagent.start. */
