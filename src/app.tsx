@@ -434,8 +434,14 @@ const AppInner = ({ launch: launch0, onSwitchProfile }: {
       }
       gw.request<{ status?: string }>("session.redirect", { text: v })
         .then(r => {
-          if (r.status === "redirected")
+          if (r.status === "redirected") {
+            // Seal the partially-streamed draft and surface the correction as
+            // its own user message, so the rewritten reply renders as a fresh
+            // assistant message instead of overwriting the draft.
+            dispatch({ kind: "message.interim", text: "", streamed: true })
+            dispatch({ kind: "user", text: v })
             return toast.show({ variant: "success", message: "↪ Redirected current turn" })
+          }
           if (r.status === "queued")
             return toast.show({ variant: "info", message: "queued for next turn" })
           fallback()
@@ -444,7 +450,7 @@ const AppInner = ({ launch: launch0, onSwitchProfile }: {
       return
     }
     setQueue(q => [...q, t])
-  }, [busy, gw, toast])
+  }, [busy, gw, toast, dispatch])
   const updateAttachments = useCallback((next: ImageAttachResponse[] | ((prev: ImageAttachResponse[]) => ImageAttachResponse[])) => {
     const value = typeof next === "function" ? next(attachmentsRef.current) : next
     attachmentsRef.current = value

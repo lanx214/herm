@@ -1255,14 +1255,16 @@ describe("app", () => {
     const t = await mount({ gw })
     await until(t, () => t.frame().includes("Ready"))
 
-    // Turn 1 starts streaming.
+    // Turn 1 starts streaming and delivers a draft.
     await act(async () => { await t.keys.typeText("first") })
     act(() => t.keys.pressEnter())
     await t.settle()
     act(() => t.gw.push({ type: "message.start" }))
-    await until(t, () => t.frame().includes("Type to queue"))
+    act(() => t.gw.push({ type: "message.delta", payload: { text: "draft text" } }))
+    await until(t, () => t.frame().includes("draft text"), 3000)
 
-    // Plain text while streaming → live-turn redirect, not interrupt+queue.
+    // Plain text while streaming → live-turn redirect: the draft is sealed
+    // and the correction surfaces as its own user message (no interrupt+queue).
     await act(async () => { await t.keys.typeText("use the other approach") })
     act(() => t.keys.pressEnter())
     await t.settle()
@@ -1270,6 +1272,14 @@ describe("app", () => {
     expect(t.gw.last("session.redirect")?.params.text).toBe("use the other approach")
     expect(t.gw.calls.some(c => c.method === "session.interrupt")).toBe(false)
     expect(t.gw.calls.filter(c => c.method === "prompt.submit").length).toBe(1)
+
+    // The rewritten reply lands in a fresh assistant message; the sealed
+    // draft is not overwritten. Rendering is async (markdown/tree-sitter),
+    // so poll for the new text before asserting the draft is still visible.
+    act(() => t.gw.push({ type: "message.delta", payload: { text: "rewritten reply" } }))
+    await until(t, () => t.frame().includes("rewritten reply"), 3000)
+    expect(t.frame()).toContain("draft text")
+    expect(t.frame()).toContain("use the other approach")
     t.destroy()
   })
 
