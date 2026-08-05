@@ -45,9 +45,12 @@ function approvalCatOf(note: string | undefined): string | undefined {
   return cat ? cat.zh : undefined
 }
 
-/** trail 单项：工具名 + 跟随的审批标记（🛡=自动放行 / ✓=人工批准），prompt 显示 ⚠。 */
+/** trail 单项：工具名 + 跟随的审批标记（🛡=自动放行 / ✓=人工批准），prompt 按处理状态显示 ⚠待审 / ✓批准 / ✗拒绝。 */
 function trailItem(p: ToolPart | PromptPart): string {
-  if (p.type === "prompt") return "⚠"
+  if (p.type === "prompt") {
+    if (p.answered) return p.answered.ok ? "✓" : "✗"
+    return "⚠"
+  }
   const note = p.approval
   let mark = ""
   if (note?.includes("smart approval")) mark = "🛡"

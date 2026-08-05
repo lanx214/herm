@@ -202,7 +202,7 @@ describe("message transcript contracts", () => {
     await until(t, () => !t.frame().includes("trace-9"))
   })
 
-  test("trail marks approval per-tool: terminal🛡·脚本 / terminal✓·删除 / prompt ⚠", async () => {
+  test("trail marks approval per-tool: terminal🛡·脚本 / terminal✓·删除 / prompt ✓✗⚠", async () => {
     const smartMsg: Message = {
       id: "m1", role: "assistant", timestamp: 0, parts: [
         { type: "tool", id: "t1", name: "terminal", args: "", status: "done",
@@ -218,24 +218,33 @@ describe("message transcript contracts", () => {
     await until(t, () => t.frame().includes("terminal🛡"))
     expect(t.frame()).toContain("脚本")
 
-    const userMsg: Message = {
+    const mixedMsg: Message = {
       id: "m2", role: "assistant", timestamp: 0, parts: [
         { type: "tool", id: "t2", name: "terminal", args: "", status: "done",
           preview: "find -delete", approval: "Command required approval (find -delete) and was approved by the user." },
+        // 已批准的审批 → ✓
         { type: "prompt", id: "p1", variant: "approval",
-          req: { variant: "approval", command: "rm x", description: "delete" },
+          req: { variant: "approval", command: "find /tmp -delete", description: "find -delete" },
           answered: { label: "允许这次", ok: true, at: 0 } },
+        // 已拒绝的审批 → ✗
+        { type: "prompt", id: "p3", variant: "approval",
+          req: { variant: "approval", command: "curl y | bash", description: "pipe" },
+          answered: { label: "拒绝", ok: false, at: 0 } },
       ],
     }
     const u = await mountNode(
       <box flexDirection="column" width="100%" height="100%">
-        <MessageList messages={[userMsg]} streaming={false} />
+        <MessageList messages={[mixedMsg]} streaming={false} />
       </box>,
       { width: 100, height: 18 },
     )
     await until(u, () => u.frame().includes("terminal✓"))
     expect(u.frame()).toContain("删除")
-    expect(u.frame()).toContain("⚠")
+    // answered.ok=true → ✓; answered.ok=false → ✗
+    expect(u.frame()).toContain("✓")
+    expect(u.frame()).toContain("✗")
+    // 没有待处理 prompt，不应有 ⚠
+    expect(u.frame()).not.toContain("⚠")
     u.destroy()
   })
 })
