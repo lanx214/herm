@@ -425,9 +425,22 @@ const AppInner = ({ launch: launch0, onSwitchProfile }: {
       return
     }
     if (busy === "interrupt") {
-      hold.current = true
-      setQueue(q => [t, ...q])
-      intr.current()
+      const v = t.trim()
+      if (!v) return
+      const fallback = () => {
+        hold.current = true
+        setQueue(q => [t, ...q])
+        intr.current()
+      }
+      gw.request<{ status?: string }>("session.redirect", { text: v })
+        .then(r => {
+          if (r.status === "redirected")
+            return toast.show({ variant: "success", message: "↪ Redirected current turn" })
+          if (r.status === "queued")
+            return toast.show({ variant: "info", message: "queued for next turn" })
+          fallback()
+        })
+        .catch(fallback)
       return
     }
     setQueue(q => [...q, t])

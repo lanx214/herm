@@ -1247,6 +1247,56 @@ describe("app", () => {
     t.destroy()
   })
 
+  test("interrupt busy-mode redirects plain text to the live turn via session.redirect", async () => {
+    const gw = new MockGateway({
+      "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},
+      "session.redirect": p => ({ status: "redirected", text: p.text }),
+    })
+    const t = await mount({ gw })
+    await until(t, () => t.frame().includes("Ready"))
+
+    // Turn 1 starts streaming.
+    await act(async () => { await t.keys.typeText("first") })
+    act(() => t.keys.pressEnter())
+    await t.settle()
+    act(() => t.gw.push({ type: "message.start" }))
+    await until(t, () => t.frame().includes("Type to queue"))
+
+    // Plain text while streaming → live-turn redirect, not interrupt+queue.
+    await act(async () => { await t.keys.typeText("use the other approach") })
+    act(() => t.keys.pressEnter())
+    await t.settle()
+
+    expect(t.gw.last("session.redirect")?.params.text).toBe("use the other approach")
+    expect(t.gw.calls.some(c => c.method === "session.interrupt")).toBe(false)
+    expect(t.gw.calls.filter(c => c.method === "prompt.submit").length).toBe(1)
+    t.destroy()
+  })
+
+  test("interrupt busy-mode falls back to interrupt+queue when redirect rejected", async () => {
+    const gw = new MockGateway({
+      "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},
+      "session.redirect": () => { throw new Error("agent does not support active-turn redirect") },
+    })
+    const t = await mount({ gw })
+    await until(t, () => t.frame().includes("Ready"))
+
+    await act(async () => { await t.keys.typeText("first") })
+    act(() => t.keys.pressEnter())
+    await t.settle()
+    act(() => t.gw.push({ type: "message.start" }))
+    await until(t, () => t.frame().includes("Type to queue"))
+
+    await act(async () => { await t.keys.typeText("fallback me") })
+    act(() => t.keys.pressEnter())
+    await t.settle()
+
+    await until(t, () => t.gw.calls.some(c => c.method === "session.interrupt"))
+    expect(t.frame()).toContain("fallback me")
+    expect(t.gw.calls.filter(c => c.method === "prompt.submit").length).toBe(1)
+    t.destroy()
+  })
+
   test("/usage opens KV dialog populated from session.usage", async () => {
     const gw = new MockGateway({
       "session.usage": () => ({

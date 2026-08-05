@@ -59,6 +59,8 @@ describe("queued prompt submit", () => {
     let n = 0
     const gw = new MockGateway({
       "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},
+      // Old backend without active-turn redirect → fallback path.
+      "session.redirect": () => { throw new Error("agent does not support active-turn redirect") },
       "session.interrupt": () => ({ status: "interrupted" }),
       "prompt.submit": () => {
         n += 1
@@ -125,6 +127,8 @@ describe("queued prompt submit", () => {
   test("interrupt-mode queue waits for session.info before draining", async () => {
     const gw = new MockGateway({
       "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},
+      // Old backend without active-turn redirect → fallback path.
+      "session.redirect": () => { throw new Error("agent does not support active-turn redirect") },
       "session.interrupt": () => ({ status: "interrupted" }),
       "prompt.submit": () => ({ status: "streaming" }),
     })
@@ -158,6 +162,8 @@ describe("queued prompt submit", () => {
     let tries = 0
     const gw = new MockGateway({
       "config.get": p => p.key === "busy" ? { value: "interrupt" } : {},
+      // Old backend without active-turn redirect → fallback path.
+      "session.redirect": () => { throw new Error("agent does not support active-turn redirect") },
       "session.interrupt": () => ({ status: "interrupted" }),
       "prompt.submit": () => {
         tries += 1
