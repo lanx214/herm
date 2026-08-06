@@ -209,7 +209,7 @@ export interface Suggestion {
 
 // 路径特征
 const DENY_PATHS = ["~/.hermes", "/root/", "~/.ssh", "/etc/", "authorized_keys", ".bashrc", ".zshrc", "config.yaml"]
-const ALLOW_PATHS = ["/tmp/", "/var/tmp/", "build/", "dist/", "node_modules", ".cache", "/mnt/c/", "--dry-run"]
+const ALLOW_PATHS = ["/tmp/", "/var/tmp/", "build/", "dist/", "node_modules", ".cache", "--dry-run"]
 // 命令特征
 const DENY_CMDS = ["os.system", "subprocess", "curl", "wget", "| sh", "| bash", "rm -rf", "sudo", "dd ", "chmod 777"]
 const ALLOW_CMDS = ["--help", "--dry-run", "print(", "echo ", "ls ", "cat ", "pwd", "git status", "git diff", "pip install", "npm install"]
