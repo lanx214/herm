@@ -686,6 +686,42 @@ describe("Sessions tab", () => {
     t.destroy()
   })
 
+  test("+ 新建 creates an explicit folder that stays visible at count 0", async () => {
+    const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
+    const t = await mountNode(<Sessions focused io={NOIO} />, { gw, width: 160, height: 40 })
+    await until(t, () => t.frame().includes("First session"))
+
+    const add = text(t, "+ 新建")
+    await act(async () => { await t.mouse.pressDown(add.screenX, add.screenY) })
+    await until(t, () => t.frame().includes("New folder"))
+    for (const c of "backlog") await act(async () => { await t.keys.typeText(c) })
+    act(() => t.keys.pressEnter())
+
+    // Explicit folder chip appears at count 0 and survives the guard
+    // that resets filters whose folder no longer has sessions.
+    await until(t, () => t.frame().includes("📁 backlog 0"))
+    await t.settle()
+    expect(t.frame()).toContain("📁 backlog 0")
+    expect(prefs.get("sessions")?.folderNames).toContain("backlog")
+    t.destroy()
+  })
+
+  test("star toggles on the selected row and ★ Starred view filters to it", async () => {
+    const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
+    const t = await mountNode(<Sessions focused io={NOIO} />, { gw, width: 160, height: 40 })
+    await until(t, () => t.frame().includes("First session"))
+
+    act(() => t.keys.pressKey("*"))
+    await until(t, () => t.frame().includes("★ Starred 1"))
+    // Starred row shows ★ in the star column (leader + star + title).
+    expect(t.frame()).toContain("★First session")
+
+    const star = text(t, "★ Starred 1")
+    await act(async () => { await t.mouse.pressDown(star.screenX, star.screenY) })
+    await until(t, () => t.frame().includes("★First session") && !t.frame().includes("Second session"))
+    t.destroy()
+  })
+
   test("click on row switches to that session", async () => {
     const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
     let switched = ""
