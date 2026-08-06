@@ -535,8 +535,8 @@ describe("app", () => {
 
     // Close the cloud; both outcome rows persist in the transcript.
     act(() => t.gw.push({ type: "message.complete", payload: { text: "", usage: { input: 0, output: 0, total: 0 } } }))
-    await until(t, () => t.frame().includes("✓ Allow once"))
-    expect(t.frame()).toContain("✗ Deny")
+    await until(t, () => t.frame().includes("✓ 允许这次"))
+    expect(t.frame()).toContain("✗ 拒绝")
 
     t.destroy()
   })

@@ -24,18 +24,65 @@ describe("PromptCard.Approval", () => {
     expect(f).toContain("$ rm -rf /tmp/x")
     expect(f).toContain("recursive rm")
     expect(f).toContain("rm_recursive, tmp_write")
-    expect(f).toContain("Allow once")
-    expect(f).toContain("Deny")
+    expect(f).toContain("允许这次")
+    expect(f).toContain("拒绝")
     expect(f).toContain("Steer")
 
     act(() => ref.current!.feed({ name: "2" } as never))
     await t.settle()
     expect(gw.last("approval.respond")?.params.choice).toBe("session")
-    expect(answers).toEqual(["Allow this session"])
+    expect(answers).toEqual(["允许这类"])
     // second send is ignored (done latch)
     act(() => ref.current!.feed({ name: "4" } as never))
     await t.settle()
     expect(gw.calls.filter(c => c.method === "approval.respond").length).toBe(1)
+  })
+
+  test("categorized approval shows Chinese type label + risk + advice", async () => {
+    const gw = new MockGateway(); gw.ok = true
+    const ref = createRef<PromptCardHandle>()
+    await using t = await mountNode(
+      <PromptCard ref={ref}
+        part={approval({ pattern_keys: ["delete in root path", "script execution via -e/-c flag"] })}
+        onAnswer={() => {}} />,
+      { gw },
+    )
+    const f = t.frame()
+    // 最高风险分类优先（删除 > 脚本）
+    expect(f).toContain("🗑️ 删除文件/目录")
+    expect(f).toContain("高风险")
+    // 动态建议：rm -rf /tmp/x → 建议允许（临时目录）
+    expect(f).toContain("建议允许")
+    // 未知 key 不崩，保留原始描述
+    expect(f).toContain("delete in root path")
+  })
+
+  test("categorized approval deny suggestion shows 建议拒绝", async () => {
+    const gw = new MockGateway(); gw.ok = true
+    const ref = createRef<PromptCardHandle>()
+    await using t = await mountNode(
+      <PromptCard ref={ref}
+        part={approval({ pattern_keys: ["delete in root path"], command: "rm -rf /root/.hermes/skills", description: "delete" })}
+        onAnswer={() => {}} />,
+      { gw },
+    )
+    const f = t.frame()
+    expect(f).toContain("建议拒绝")
+    expect(f).toContain("个人配置")
+  })
+
+  test("uncategorized approval falls back to Permission required", async () => {
+    const gw = new MockGateway(); gw.ok = true
+    const ref = createRef<PromptCardHandle>()
+    await using t = await mountNode(
+      <PromptCard ref={ref}
+        part={approval({ pattern_keys: ["some_future_unknown_key"] })}
+        onAnswer={() => {}} />,
+      { gw },
+    )
+    const f = t.frame()
+    expect(f).toContain("Permission required")
+    expect(f).toContain("允许这次")
   })
 
   test("←/→ wraps, Enter sends selection", async () => {
@@ -71,7 +118,7 @@ describe("PromptCard.Approval", () => {
     expect(gw.last("approval.respond")).toBeUndefined()
     expect(answers).toEqual([])
     expect(t.frame()).toContain("steer sent")
-    expect(t.frame()).toContain("Deny")
+    expect(t.frame()).toContain("拒绝")
   })
 
   test("steer input escape returns to approval without RPC", async () => {

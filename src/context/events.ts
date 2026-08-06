@@ -45,6 +45,14 @@ function shape(v: unknown): string {
   return keys.length ? `object keys: ${keys.join(", ")}` : "object"
 }
 
+/** 从 tool.complete 的 result JSON 里提取审批标记（smart 自动放行/用户批准）。 */
+function approvalNote(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined
+  const r = result as Record<string, unknown>
+  const note = r.approval
+  return typeof note === "string" && note ? note : undefined
+}
+
 export function formatProcessNotification(text: string): string {
   const body = text.replace(/^\[IMPORTANT: /, "").replace(/\]$/, "")
   const done = body.match(/^Background process (\S+) completed \(exit code (\S+)\)\.\nCommand: (.+?)(?:\n|$)/)
@@ -125,7 +133,8 @@ export function mapEvent(ev: GatewayEvent, side: Side): Action | null {
     case "tool.generating":
       return { kind: "tool.generating", name: ev.payload.name }
 
-    case "tool.complete":
+    case "tool.complete": {
+      const note = approvalNote(ev.payload.result)
       return {
         kind: "tool.complete",
         id: ev.payload.tool_id,
@@ -134,7 +143,9 @@ export function mapEvent(ev: GatewayEvent, side: Side): Action | null {
         inline_diff: ev.payload.inline_diff,
         duration: typeof ev.payload.duration_s === "number" ? ev.payload.duration_s * 1000 : undefined,
         result: ev.payload.result_text,
+        approval: note,
       }
+    }
 
     case "thinking.delta":
       // Cosmetic spinner text from the agent's status line, not model

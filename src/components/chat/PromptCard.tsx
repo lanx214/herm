@@ -20,6 +20,8 @@ import type { ParsedKey } from "@opentui/core"
 import { useTheme } from "../../theme"
 import { useGateway } from "../../context/gateway"
 import { mkApproval, remember } from "../../context/approval-memory"
+import { categorize, suggest } from "../../context/approval-categories"
+import type { ApprovalCategory, Verdict } from "../../context/approval-categories"
 import { MaskInput } from "../../ui/mask-input"
 import type { PromptPart, PromptReq, Part } from "../../types/message"
 
@@ -72,16 +74,46 @@ const Pill = (p: { on: boolean; hot: string; label: string; onPick: () => void }
 const CHOICES = ["once", "session", "never", "deny"] as const
 type Choice = typeof CHOICES[number]
 const LABELS: Record<Choice, string> = {
-  once: "Allow once",
-  session: "Allow this session",
-  never: "Never ask",
-  deny: "Deny",
+  once: "允许这次",
+  session: "允许这类",
+  never: "永不再问",
+  deny: "拒绝",
 }
 const RESPOND: Record<Choice, string> = {
   once: "once",
   session: "session",
   never: "always",
   deny: "deny",
+}
+
+const RISK_TEXT: Record<ApprovalCategory["risk"], string> = {
+  low: "低风险",
+  medium: "中风险",
+  high: "高风险",
+  critical: "极高风险",
+}
+const RISK_ORDER: Record<ApprovalCategory["risk"], number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+}
+const VERDICT_TEXT: Record<Verdict, string> = {
+  allow: "建议允许",
+  deny: "建议拒绝",
+  review: "自行判断",
+}
+
+/** 取一组 pattern_key 中最高的分类（用于卡片顶部标签）。 */
+function topCategory(keys: string[] | undefined): ApprovalCategory | null {
+  if (!keys?.length) return null
+  let best: ApprovalCategory | null = null
+  for (const key of keys) {
+    const cat = categorize(key)
+    if (!cat) continue
+    if (!best || RISK_ORDER[cat.risk] > RISK_ORDER[best.risk]) best = cat
+  }
+  return best
 }
 
 const Approval = forwardRef<PromptCardHandle, {
@@ -97,6 +129,9 @@ const Approval = forwardRef<PromptCardHandle, {
   const done = useRef(false)
 
   const prompt = mkApproval(p.req)
+  const cat = topCategory(p.req.pattern_keys)
+  const sug = cat ? suggest(cat, p.req.command) : null
+  const sugFg = sug?.verdict === "deny" ? theme.error : sug?.verdict === "allow" ? theme.success : theme.warning
 
   const send = (c: Choice) => {
     if (done.current) return
@@ -151,9 +186,24 @@ const Approval = forwardRef<PromptCardHandle, {
       <box flexDirection="column" gap={1} paddingLeft={1} paddingRight={2} paddingY={1}>
         <box flexDirection="row" gap={1} height={1}>
           <text fg={theme.warning}>△</text>
-          <text fg={theme.text}>Permission required</text>
-          <text fg={theme.textMuted}>· {prompt.question}</text>
+          {cat ? (
+            <>
+              <text fg={theme.text}><strong>{cat.icon} {cat.zh}</strong></text>
+              <text fg={RISK_ORDER[cat.risk] >= RISK_ORDER.high ? theme.error : theme.textMuted}>
+                · {RISK_TEXT[cat.risk]}
+              </text>
+            </>
+          ) : (
+            <text fg={theme.text}>Permission required</text>
+          )}
         </box>
+        {cat && sug ? (
+          <box flexDirection="row" gap={1} paddingLeft={2} minHeight={1}>
+            <text fg={theme.textMuted}>💡</text>
+            <text fg={sugFg}><strong>{VERDICT_TEXT[sug.verdict]}</strong></text>
+            <text fg={theme.text} wrapMode="word">{sug.reason}</text>
+          </box>
+        ) : null}
         <box flexDirection="row" gap={1} paddingLeft={2} minHeight={1}>
           <text fg={theme.textMuted}>#</text>
           <text fg={theme.text} wrapMode="word">{p.req.description || "Shell command"}</text>

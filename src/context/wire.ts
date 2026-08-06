@@ -51,7 +51,7 @@ export type GatewayEvent = ({
   | { type: "tool.start"; payload: { tool_id: string; name?: string; context?: string; args_text?: string; todos?: unknown[] } }
   | { type: "tool.progress"; payload: { name?: string; preview?: string } }
   | { type: "tool.generating"; payload: { name?: string } }
-  | { type: "tool.complete"; payload: { tool_id: string; name?: string; summary?: string; error?: string; inline_diff?: string; duration_s?: number; result_text?: string; todos?: unknown[] } }
+  | { type: "tool.complete"; payload: { tool_id: string; name?: string; summary?: string; error?: string; inline_diff?: string; duration_s?: number; result_text?: string; todos?: unknown[]; result?: unknown } }
   | { type: "clarify.request"; payload: { request_id: string; question: string; choices: string[] | null } }
   | { type: "approval.request"; payload: { command: string; description: string; pattern_keys?: string[] } }
   | { type: "sudo.request"; payload: { request_id: string } }
