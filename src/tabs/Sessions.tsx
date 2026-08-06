@@ -669,6 +669,8 @@ export const Sessions = memo((props: Props) => {
   const listed = useMemo(() => [...active, ...hist], [active, hist])
   // Counts for the second filter row (starred + per-folder). Derived
   // from the pre-view `sorted` so counts ignore the source filter.
+  // Explicit folders (folderNames) stay listed even at count 0 so a
+  // freshly created folder is visible before any session is filed.
   const folderStats = useMemo(() => {
     let star = 0
     const byName = new Map<string, number>()
@@ -677,8 +679,13 @@ export const Sessions = memo((props: Props) => {
       const f = folderOf(r)
       if (f) byName.set(f, (byName.get(f) ?? 0) + 1)
     }
-    return { star, folders: [...byName.entries()].sort((a, b) => a[0].localeCompare(b[0])) }
-  }, [sorted, isStarred, folderOf])
+    const names = new Set([...(sPrefs.folderNames ?? []), ...byName.keys()])
+    return {
+      star,
+      folders: [...names].sort((a, b) => a.localeCompare(b))
+        .map(n => [n, byName.get(n) ?? 0] as [string, number]),
+    }
+  }, [sorted, isStarred, folderOf, sPrefs.folderNames])
   useEffect(() => {
     if (views.length > 0 && !views.some(v => v.id === view)) setView(views[0].id)
   }, [views, view])
@@ -1038,9 +1045,36 @@ export const Sessions = memo((props: Props) => {
       title: "New folder", label: "Folder name", initial: "",
     })
     if (name === null || !name.trim()) return
-    setFolderView(`f:${name.trim()}`)
-    toast.show({ variant: "info", message: `Folder '${name.trim()}' created — press f on a session to file it`, duration: 3000 })
-  }, [dialog, toast])
+    const n = name.trim()
+    const names = new Set(sPrefs.folderNames ?? [])
+    names.add(n)
+    setSessionsPref({ folderNames: [...names] })
+    setFolderView(`f:${n}`)
+    toast.show({ variant: "success", message: `Folder '${n}' created — press f on a session to file it`, duration: 2500 })
+  }, [dialog, toast, sPrefs.folderNames, setSessionsPref])
+
+  // Delete the currently filtered folder: un-files its sessions and
+  // drops it from folderNames (empty folder chips are otherwise
+  // permanent). Reached with list.delete (d) while a folder view is
+  // active — sessions aren't deletable from an empty folder view.
+  const deleteFolder = useCallback(() => {
+    if (!folderView.startsWith("f:")) return
+    const fname = folderView.slice(2)
+    void openConfirm(dialog, {
+      title: "Delete folder?",
+      body: `Folder '${fname}' will be removed and its sessions un-filed.`,
+      yes: "Delete",
+      danger: true,
+    }).then(ok => {
+      if (!ok) return
+      const names = (sPrefs.folderNames ?? []).filter(n => n !== fname)
+      const next = { ...folders }
+      for (const [k, v] of Object.entries(next)) if (v === fname) delete next[k]
+      setSessionsPref({ folderNames: names, folders: next })
+      setFolderView("all")
+      toast.show({ variant: "success", message: `Folder '${fname}' deleted`, duration: 800 })
+    })
+  }, [dialog, folderView, sPrefs.folderNames, folders, setSessionsPref, toast])
 
   const rename = useCallback(async () => {
     const v = live.current.visible[sel]
@@ -1108,6 +1142,9 @@ export const Sessions = memo((props: Props) => {
       if (key.raw && key.raw.length === 1 && key.raw >= " ") return setQuery(p => p + key.raw)
       return
     }
+    // In a folder view, list.delete removes the folder (its sessions
+    // un-file) instead of deleting a session — folder views can be empty.
+    if (folderView.startsWith("f:") && keys.match("list.delete", key)) return void deleteFolder()
     const matched = handleListKey(keys, key, {
       count, setSel,
       page: Math.max(1, (vscroll.current?.viewport.height ?? 10) - 1),
@@ -1259,7 +1296,7 @@ export const Sessions = memo((props: Props) => {
           [keys.print("sessions.star"), "star"],
           [keys.print("sessions.folder"), "folder"],
           [keys.print("sessions.rename"), "rename"],
-          [keys.print("list.delete"), "delete"],
+          [keys.print("list.delete"), folderView.startsWith("f:") ? "del folder" : "delete"],
           [keys.print("list.refresh"), "refresh"],
         ]} />
     </box>

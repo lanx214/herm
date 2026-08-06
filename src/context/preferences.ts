@@ -78,6 +78,10 @@ export type SessionsPrefs = {
   /** Session ids starred for quick access. A compression tip keeps
    *  its lineage root's star (see Sessions.tsx isStarred). */
   starred?: string[]
+  /** Explicit folder names created via "+ 新建". Empty folders stay
+   *  visible in the folder row until deleted; `folders` maps sessions
+   *  into them. */
+  folderNames?: string[]
   /** session_id → folder name. Folders are implicit — any non-empty
    *  name creates one; removing the entry un-files the session. */
   folders?: Record<string, string>
