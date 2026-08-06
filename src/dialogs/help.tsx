@@ -1,9 +1,12 @@
 // Help dialog — keyboard shortcut reference, generated from the
 // action catalog so it stays correct under user rebinds.
 
-import { useMemo } from "react"
+import { useMemo, useRef } from "react"
 import { useTheme } from "../theme"
+import { useTerminalDimensions } from "@opentui/react"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { useKeys, type Scope } from "../keys"
+import { VBAR } from "../ui/table"
 
 type Group = { title: string; scope: Scope }
 
@@ -23,6 +26,8 @@ const COLS = 2
 export const HelpDialog = () => {
   const theme = useTheme().theme
   const keys = useKeys()
+  const dims = useTerminalDimensions()
+  const vscroll = useRef<ScrollBoxRenderable | null>(null)
 
   const sections = useMemo(() =>
     GROUPS.map(g => ({
@@ -47,8 +52,13 @@ export const HelpDialog = () => {
     if (i === 0) acc += h
   }
 
+  // Fit within the terminal: cap height (scrolls when long) and clamp
+  // width on narrow screens instead of overflowing the dialog frame.
+  const W = Math.min(104, Math.max(60, dims.width - 6))
+  const maxH = Math.max(8, dims.height - 8)
+
   return (
-    <box flexDirection="column" width={104}>
+    <box flexDirection="column" width={W}>
       <box height={1} flexDirection="row">
         <box flexGrow={1}>
           <text fg={theme.text}><strong>Keyboard Shortcuts</strong></text>
@@ -56,25 +66,27 @@ export const HelpDialog = () => {
         <text fg={theme.textMuted}>{`leader = ${keys.print("leader")}`}</text>
       </box>
       <box height={1} />
-      <box flexDirection="row" gap={3}>
-        {cols.map((col, ci) => (
-          <box key={ci} flexDirection="column" flexGrow={1} flexBasis={0}>
-            {col.map(s => (
-              <box key={s.title} flexDirection="column" marginBottom={1}>
-                <text fg={theme.primary}><strong>{s.title}</strong></text>
-                {s.rows.map(([chord, desc]) => (
-                  <box key={chord + desc} flexDirection="row" height={1} paddingLeft={1}>
-                    <box width={14}><text fg={theme.accent}>{chord}</text></box>
-                    <box flexGrow={1} minWidth={0} height={1} overflow="hidden">
-                      <text fg={theme.textMuted}>{desc}</text>
+      <scrollbox ref={vscroll} scrollY height={maxH} verticalScrollbarOptions={VBAR}>
+        <box flexDirection="row" gap={3}>
+          {cols.map((col, ci) => (
+            <box key={ci} flexDirection="column" flexGrow={1} flexBasis={0}>
+              {col.map(s => (
+                <box key={s.title} flexDirection="column" marginBottom={1}>
+                  <text fg={theme.primary}><strong>{s.title}</strong></text>
+                  {s.rows.map(([chord, desc]) => (
+                    <box key={chord + desc} flexDirection="row" height={1} paddingLeft={1}>
+                      <box width={14}><text fg={theme.accent}>{chord}</text></box>
+                      <box flexGrow={1} minWidth={0} height={1} overflow="hidden">
+                        <text fg={theme.textMuted}>{desc}</text>
+                      </box>
                     </box>
-                  </box>
-                ))}
-              </box>
-            ))}
-          </box>
-        ))}
-      </box>
+                  ))}
+                </box>
+              ))}
+            </box>
+          ))}
+        </box>
+      </scrollbox>
       <text fg={theme.textMuted}>esc to close</text>
     </box>
   )

@@ -22,6 +22,7 @@ import { Ticker, inline } from "../ui/ticker"
 import { FilterChip } from "../ui/filter-chip"
 import { openConfirm } from "../dialogs/confirm"
 import { openTextPrompt } from "../dialogs/text-prompt"
+import { openFolderPicker } from "../dialogs/folder-picker"
 import { fmt, cost, trunc, ago, when, span, stamp } from "../ui/fmt"
 import { home } from "../home"
 import { prefs } from "../context/preferences"
@@ -523,6 +524,7 @@ const SearchHeaderRow = memo(() => {
   return (
     <Hdr>
       <Col w={2} fg={fg}>{"  "}</Col>
+      <Col w={1} fg={fg}>{" "}</Col>
       <Col grow fg={fg} bold>Title</Col>
       <Col w={9} fg={fg} bold>Source</Col>
       <Col w={10} fg={fg} bold>When</Col>
@@ -532,8 +534,8 @@ const SearchHeaderRow = memo(() => {
 })
 
 const SearchItem = memo((props: {
-  id: string; result: SessionHit; idx: number; selected: boolean
-  onActivate: (i: number) => void; onHover: (i: number) => void
+  id: string; result: SessionHit; idx: number; selected: boolean; starred: boolean
+  onActivate: (i: number) => void; onHover: (i: number) => void; onStar: (i: number) => void
 }) => {
   const theme = useTheme().theme
   const { result: r, idx: i } = props
@@ -542,6 +544,12 @@ const SearchItem = memo((props: {
          backgroundColor={props.selected ? theme.backgroundElement : undefined}
          onMouseDown={() => props.onActivate(i)} onMouseMove={() => props.onHover(i)}>
       <Col w={2} fg={props.selected ? theme.primary : theme.text}>{props.selected ? "▸ " : "  "}</Col>
+      <box width={1} flexShrink={0}
+           onMouseDown={(e) => { e.stopPropagation(); props.onStar(i) }}>
+        <text><span fg={props.starred ? theme.warning : theme.textMuted}>
+          {props.starred ? "★" : "·"}
+        </span></text>
+      </box>
       <Col grow fg={props.selected ? theme.accent : theme.text} bold={props.selected}>
         {r.title ?? "Untitled"}
       </Col>
@@ -1010,11 +1018,34 @@ export const Sessions = memo((props: Props) => {
 
   // Star writes to the lineage root id so a compression tip inherits
   // it (isStarred/folderOf read root id via lineage_root_id).
+  // Star/folder operate on the row under the cursor in either the
+  // list or the search results. Search hits have no lineage, so their
+  // session_id is the star key directly.
+  const pickRow = (i: number): { id: string; root?: string | null } | null => {
+    const l = live.current
+    const hit = l.searching ? l.results[i] : l.visible[i]?.row
+    if (!hit) return null
+    const id = l.searching ? (hit as SessionHit).session_id : (hit as Row).id
+    const root = l.searching ? null : (hit as Row).detail?.lineage_root_id
+    return { id, root }
+  }
+
+  // Set/unset a session's folder and keep folderNames in sync so the
+  // folder chip survives at count 0 after the last session un-files.
+  const applyFolder = useCallback((key: string, name: string) => {
+    const next = { ...folders }
+    if (name) next[key] = name
+    else delete next[key]
+    const names = new Set(sPrefs.folderNames ?? [])
+    if (name) names.add(name)
+    setSessionsPref({ folders: next, folderNames: [...names] })
+    toast.show({ variant: "success", message: name ? `Filed to ${name}` : "Removed from folder", duration: 800 })
+  }, [folders, sPrefs.folderNames, setSessionsPref, toast])
+
   const toggleStar = useCallback((i: number) => {
-    const v = live.current.visible[i]
-    if (!v) return
-    const r = v.row
-    const key = r.detail?.lineage_root_id ?? r.id
+    const row = pickRow(i)
+    if (!row) return
+    const key = row.root ?? row.id
     const was = starred.has(key)
     const next = new Set(starred)
     if (was) next.delete(key); else next.add(key)
@@ -1022,23 +1053,18 @@ export const Sessions = memo((props: Props) => {
     toast.show({ variant: "success", message: was ? "Unstarred" : "Starred", duration: 800 })
   }, [starred, setSessionsPref, toast])
 
-  const setFolder = useCallback(async (i: number) => {
-    const v = live.current.visible[i]
-    if (!v) return
-    const r = v.row
-    const key = r.detail?.lineage_root_id ?? r.id
-    const name = await openTextPrompt(dialog, {
-      title: `Folder: ${trunc(label(r), 42)}`,
-      label: "Folder (empty = unfile)",
-      initial: folderOf(r) ?? "",
+  const setFolder = useCallback((i: number) => {
+    const row = pickRow(i)
+    if (!row) return
+    const key = row.root ?? row.id
+    openFolderPicker(dialog, {
+      current: folders[key] ?? "",
+      folders: [...new Set([...(sPrefs.folderNames ?? []), ...Object.values(folders)])]
+        .sort((a, b) => a.localeCompare(b)),
+      onPick: (name) => applyFolder(key, name),
+      onNew: (name) => applyFolder(key, name),
     })
-    if (name === null) return
-    const next = { ...folders }
-    if (name.trim()) next[key] = name.trim()
-    else delete next[key]
-    setSessionsPref({ folders: next })
-    toast.show({ variant: "success", message: name.trim() ? `Filed to ${name.trim()}` : "Removed from folder", duration: 800 })
-  }, [dialog, folders, folderOf, setSessionsPref, toast])
+  }, [dialog, folders, sPrefs.folderNames, applyFolder])
 
   const newFolder = useCallback(async () => {
     const name = await openTextPrompt(dialog, {
@@ -1139,6 +1165,11 @@ export const Sessions = memo((props: Props) => {
       if (key.name === "return") return rowActivate(searchSel)
       if (key.name === "up") return setSearchSel(p => Math.max(0, p - 1))
       if (key.name === "down") return setSearchSel(p => Math.min(count - 1, p + 1))
+      // * is never a search term, so star the highlighted result
+      // (name, not raw: kitty reports raw as the CSI sequence).
+      // Ctrl+F files it — plain f stays a search character.
+      if (key.name === "*") return void toggleStar(searchSel)
+      if (keys.match("sessions.folder", key)) return void setFolder(searchSel)
       if (key.raw && key.raw.length === 1 && key.raw >= " ") return setQuery(p => p + key.raw)
       return
     }
@@ -1170,6 +1201,19 @@ export const Sessions = memo((props: Props) => {
       const dir = prev ? -1 : 1
       setView(v => {
         const list = views.map(x => x.id)
+        const i = list.indexOf(v)
+        return list[((i < 0 ? 0 : i) + dir + list.length) % list.length]
+      })
+      return
+    }
+    // [ and ] cycle the second filter row (star + folders).
+    const fprev = keys.match("sessions.folderPrev", key)
+    const fnext = keys.match("sessions.folderNext", key)
+    if (fprev || fnext) {
+      const list = ["all", "starred", ...folderStats.folders.map(([n]) => `f:${n}`)]
+      if (list.length < 2) return
+      const dir = fprev ? -1 : 1
+      setFolderView(v => {
         const i = list.indexOf(v)
         return list[((i < 0 ? 0 : i) + dir + list.length) % list.length]
       })
@@ -1230,7 +1274,8 @@ export const Sessions = memo((props: Props) => {
                 ? results.map((r, i) => (
                     <SearchItem key={r.session_id} id={rowId(i)} idx={i}
                       result={r} selected={i === searchSel}
-                      onActivate={rowActivate} onHover={rowHover} />
+                      starred={starred.has(r.session_id)}
+                      onActivate={rowActivate} onHover={rowHover} onStar={toggleStar} />
                   ))
                 : visible.map((v, i) => (
                     <box key={`${v.row.id}-${v.indent ? "c" : "p"}`} flexDirection="column"
@@ -1284,20 +1329,20 @@ export const Sessions = memo((props: Props) => {
       ? [
           ["↑↓", "navigate"],
           ["Enter/click", "switch"],
+          ["*", "star"],
+          ["Ctrl+F", "folder"],
           ["Esc", "cancel"],
         ]
       : [
-          ["↑↓", "navigate"],
           ...nav,
           ...sub,
-          [`${keys.print("list.activate")}/click`, action],
+          [keys.print("list.activate"), action],
           [keys.print("list.search"), "search"],
-          [keys.print("sessions.sort"), `sort: ${sort}`],
+          [keys.print("sessions.sort"), sort],
           [keys.print("sessions.star"), "star"],
           [keys.print("sessions.folder"), "folder"],
           [keys.print("sessions.rename"), "rename"],
           [keys.print("list.delete"), folderView.startsWith("f:") ? "del folder" : "delete"],
-          [keys.print("list.refresh"), "refresh"],
         ]} />
     </box>
   )

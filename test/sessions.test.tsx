@@ -722,6 +722,49 @@ describe("Sessions tab", () => {
     t.destroy()
   })
 
+  test("search results can be starred with * and filed with Ctrl+F on the highlighted hit", async () => {
+    const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
+    const search = () => ([
+      { session_id: "sid-b", snippet: "hey", role: "user", source: "cli", model: null, started_at: 1699999000, title: "Second session" },
+    ] as SessionHit[])
+    const t = await mountNode(<Sessions focused io={{ ...NOIO, search }} />, { gw, width: 160, height: 40 })
+    await until(t, () => t.frame().includes("First session"))
+
+    act(() => t.keys.pressKey("/"))
+    await until(t, () => t.frame().includes("Search Results"))
+    for (const c of "sec") await act(async () => { await t.keys.typeText(c) })
+    await until(t, () => t.frame().includes("Second session"))
+
+    // * stars the highlighted result (never a search character).
+    act(() => t.keys.pressKey("*"))
+    await until(t, () => t.frame().includes("★Second session"))
+    expect(prefs.get("sessions")?.starred).toContain("sid-b")
+
+    // Ctrl+F files it — plain f stays a search character.
+    act(() => t.keys.pressKey("f", { ctrl: true }))
+    await until(t, () => t.frame().includes("Folder"))
+    t.destroy()
+  })
+
+  test("f opens the folder picker and files the session into an existing folder", async () => {
+    prefs.set("sessions", { folderNames: ["研究"], folders: {} })
+    const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
+    const t = await mountNode(<Sessions focused io={NOIO} />, { gw, width: 160, height: 40 })
+    await until(t, () => t.frame().includes("First session"))
+
+    act(() => t.keys.pressKey("f", { ctrl: true }))
+    await until(t, () => t.frame().includes("Folder"))
+    expect(t.frame()).toContain("（未分组）")
+    expect(t.frame()).toContain("📁 研究")
+
+    // Cursor starts on （未分组）; ↓ moves to 研究, Enter files.
+    act(() => t.keys.pressArrow("down"))
+    act(() => t.keys.pressEnter())
+    await until(t, () => prefs.get("sessions")?.folders?.["sid-a"] === "研究")
+    expect(t.frame()).toContain("📁 研究 1")
+    t.destroy()
+  })
+
   test("click on row switches to that session", async () => {
     const gw = new MockGateway({ "session.list": () => ({ sessions: ROWS }) })
     let switched = ""
