@@ -14,6 +14,7 @@ export const FNS = {
   search: sdb.search,
   systemPrompt: sdb.systemPrompt,
   goalState: sdb.goalState,
+  pinnedIds: sdb.pinnedIds,
   analytics,
   memoryActivity: readMemoryActivity,
 } as const

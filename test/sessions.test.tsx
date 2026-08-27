@@ -13,7 +13,7 @@ const ROWS = [
   { id: "sid-b", title: "Second session", preview: "", message_count: 12, started_at: 1699999000, source: "cli" },
 ]
 
-const NOIO = { list: () => [], search: () => [], remove: () => true, rename: () => true, subagents: () => [], peek: () => [] }
+const NOIO = { list: () => [], search: () => [], remove: () => true, rename: () => true, subagents: () => [], peek: () => [], pinned: () => [], setPinned: () => true }
 
 type T = Awaited<ReturnType<typeof mountNode>>
 
@@ -727,7 +727,9 @@ describe("Sessions tab", () => {
     const search = () => ([
       { session_id: "sid-b", snippet: "hey", role: "user", source: "cli", model: null, started_at: 1699999000, title: "Second session" },
     ] as SessionHit[])
-    const t = await mountNode(<Sessions focused io={{ ...NOIO, search }} />, { gw, width: 160, height: 40 })
+    const pinned: Array<[string, boolean]> = []
+    const setPinned = (id: string, on: boolean) => { pinned.push([id, on]); return true }
+    const t = await mountNode(<Sessions focused io={{ ...NOIO, search, setPinned }} />, { gw, width: 160, height: 40 })
     await until(t, () => t.frame().includes("First session"))
 
     act(() => t.keys.pressKey("/"))
@@ -735,10 +737,11 @@ describe("Sessions tab", () => {
     for (const c of "sec") await act(async () => { await t.keys.typeText(c) })
     await until(t, () => t.frame().includes("Second session"))
 
-    // * stars the highlighted result (never a search character).
+    // * stars the highlighted result (never a search character); the
+    // star now lands in state.db sessions.pinned, not tui.json.
     act(() => t.keys.pressKey("*"))
     await until(t, () => t.frame().includes("★Second session"))
-    expect(prefs.get("sessions")?.starred).toContain("sid-b")
+    expect(pinned).toEqual([["sid-b", true]])
 
     // Ctrl+F files it — plain f stays a search character.
     act(() => t.keys.pressKey("f", { ctrl: true }))

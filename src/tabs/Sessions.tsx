@@ -572,8 +572,10 @@ type IO = {
   subagents: P<typeof sdb.children>
   lineage: P<typeof sdb.lineage>
   peek: P<typeof sdb.peek>
+  pinned: P<typeof sdb.pinnedIds>
   remove: typeof sdb.remove
   rename: typeof sdb.rename
+  setPinned: typeof sdb.setPinned
 }
 
 type Props = {
@@ -604,8 +606,10 @@ export const Sessions = memo((props: Props) => {
     subagents: props.io?.subagents ?? dbio.children,
     lineage: props.io?.lineage ?? dbio.lineage,
     peek: props.io?.peek ?? dbio.peek,
+    pinned: props.io?.pinned ?? dbio.pinnedIds,
     remove: props.io?.remove ?? sdb.remove,
     rename: props.io?.rename ?? sdb.rename,
+    setPinned: props.io?.setPinned ?? sdb.setPinned,
   }), [props.io])
 
   const fresh = cached && last.home === cacheHome()
@@ -624,8 +628,27 @@ export const Sessions = memo((props: Props) => {
   const setSessionsPref = useCallback((patch: Partial<SessionsPrefs>) => {
     prefs.set("sessions", { ...(prefs.get("sessions") ?? {}), ...patch })
   }, [])
+
+  // Star source is state.db sessions.pinned (same column the desktop's
+  // pin writes) — not tui.json anymore. Seeded from the DB below, kept
+  // as a Set so the filter/count/isStarred logic below is unchanged.
+  const [starred, setStarred] = useState<Set<string>>(new Set())
+
+  // Seed the ★ set from the DB and migrate any legacy tui.json stars
+  // into pinned once (the previous storage), then clear the prefs key
+  // so they aren't replayed. Desktop pins land on the same column.
+  useEffect(() => {
+    const legacy = sPrefs.starred ?? []
+    if (legacy.length) {
+      for (const id of legacy) io.setPinned(id, true)
+      setSessionsPref({ starred: [] })
+    }
+    let live = true
+    void Promise.resolve(io.pinned()).then(ids => { if (live) setStarred(new Set(ids)) }).catch(() => {})
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const setSort = useCallback((s: Sort) => setSessionsPref({ sort: s }), [setSessionsPref])
-  const starred = useMemo(() => new Set(sPrefs.starred ?? []), [sPrefs.starred])
   const folders = useMemo(() => sPrefs.folders ?? {}, [sPrefs.folders])
   const [view, setView] = useState<string>(HOME)
   // Second filter dimension (star + manual folders). "all" = no filter;
@@ -855,6 +878,12 @@ export const Sessions = memo((props: Props) => {
       if (live.length) setLiveRows(live.map(s => toLiveRow(s, pick(local, s), pick(found, s))))
     }
 
+    // Refresh the ★ set so desktop-side pins (same sessions.pinned
+    // column) surface without restarting herm.
+    void Promise.resolve(io.pinned()).then(ids => {
+      if (gen.current === current) setStarred(new Set(ids))
+    }).catch(() => {})
+
     let kidsError = ""
     try {
       const parents = final.filter(row => (row.detail?.subagent_count ?? 0) > 0)
@@ -1000,20 +1029,30 @@ export const Sessions = memo((props: Props) => {
         })
       if (!done) return
       home.invalidate("recentSessions")
-      // Drop any star/folder on the deleted session (and its lineage
-      // root, if the deleted row was a compression tip).
-      if (starred.has(r.id) || folders[r.id] || (r.detail?.lineage_root_id && starred.has(r.detail.lineage_root_id))) {
-        const drop = r.detail?.lineage_root_id ?? r.id
-        const nextStarred = (sPrefs.starred ?? []).filter(x => x !== r.id && x !== drop)
+      // Drop any star on the deleted session (and its lineage root, if
+      // the deleted row was a compression tip) from the DB + the ★ set.
+      const drop = r.detail?.lineage_root_id ?? r.id
+      if (starred.has(r.id) || starred.has(drop)) {
+        io.setPinned(r.id, false)
+        io.setPinned(drop, false)
+        setStarred(prev => {
+          const next = new Set(prev)
+          next.delete(r.id)
+          next.delete(drop)
+          return next
+        })
+      }
+      // Un-file the session from any manual folder (prefs still own these).
+      if (folders[r.id]) {
         const nextFolders = { ...folders }
         delete nextFolders[r.id]
         if (drop !== r.id) delete nextFolders[drop]
-        setSessionsPref({ starred: nextStarred, folders: nextFolders })
+        setSessionsPref({ folders: nextFolders })
       }
       toast.show({ variant: "success", message: "Session deleted" })
       void load()
     })
-  }, [gw, dialog, toast, load, starred, folders, setSessionsPref])
+  }, [gw, dialog, toast, load, starred, folders, io, setStarred, setSessionsPref])
   confirmDeleteRef.current = confirmDelete
 
   // Star writes to the lineage root id so a compression tip inherits
@@ -1049,9 +1088,10 @@ export const Sessions = memo((props: Props) => {
     const was = starred.has(key)
     const next = new Set(starred)
     if (was) next.delete(key); else next.add(key)
-    setSessionsPref({ starred: [...next] })
+    setStarred(next)
+    io.setPinned(key, !was)
     toast.show({ variant: "success", message: was ? "Unstarred" : "Starred", duration: 800 })
-  }, [starred, setSessionsPref, toast])
+  }, [starred, io, toast])
 
   const setFolder = useCallback((i: number) => {
     const row = pickRow(i)

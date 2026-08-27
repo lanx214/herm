@@ -602,4 +602,26 @@ export function remove(sid: string): boolean {
   } finally { db.close() }
 }
 
+/** All session ids flagged pinned (starred) in state.db. herm writes
+ *  both the target id and its compression root; the desktop writes its
+ *  own tip row — so this set covers every starred session from either
+ *  side, which is why it seeds the Sessions tab's ★ set. */
+export function pinnedIds(): string[] {
+  const rows = q(`SELECT id FROM sessions WHERE pinned = 1`)?.all() as { id: string }[] | undefined
+  return (rows ?? []).map(r => r.id)
+}
+
+/** Star/unstar a session. Writes pinned on both the target id and its
+ *  compression-chain root so a later compaction tip inherits the star
+ *  (mirrors the legacy tui.json approach that keyed on lineage root).
+ *  Fresh RW handle like rename() — stars are rare user actions. */
+export function setPinned(id: string, pinned: boolean): boolean {
+  const root = walkUp(id)
+  const db = new Database(conn.path)
+  try {
+    db.run("UPDATE sessions SET pinned = ? WHERE id IN (?, ?)", [pinned ? 1 : 0, id, root])
+    return (db.query("SELECT changes() AS c").get() as { c: number }).c > 0
+  } finally { db.close() }
+}
+
 export * as sdb from "./sessions-db"
