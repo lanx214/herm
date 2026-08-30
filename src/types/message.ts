@@ -52,9 +52,13 @@ export type PromptPart = {
   answered?: { label: string; ok: boolean; at: number; question?: string }
 }
 
+export type ClarifyReq = { variant: "clarify"; request_id: string; question: string; choices: string[] | null }
+export type ClarifyBatchReq = { variant: "clarify"; request_id: string; questions: { qid: string; question: string; choices?: string[] | null; multi_select?: boolean }[] }
+
 export type PromptReq =
   | { variant: "approval"; command: string; description: string; pattern_keys?: string[] }
-  | { variant: "clarify"; request_id: string; question: string; choices: string[] | null }
+  | ClarifyReq
+  | ClarifyBatchReq
   | { variant: "sudo"; request_id: string }
   | { variant: "secret"; request_id: string; prompt: string; env_var: string }
   | { variant: "terminal-read"; request_id: string; start?: number; count?: number }

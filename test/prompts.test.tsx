@@ -39,9 +39,100 @@ describe("prompts", () => {
     act(() => t.keys.pressEnter())
     await t.settle()
     expect(t.gw.last("clarify.respond")?.params.answer).toBe("my custom answer")
+    expect(t.gw.last("clarify.respond")?.params.question_id).toBe("q0")
     t.destroy()
   })
 
+  test("clarify: batch payload (questions list, no top-level question) answers without crashing", async () => {
+    // Batch clarify sends {"questions": [...]} — no top-level `question`
+    // field. The Outcome render must not deref undefined (regression: cap()
+    // on undefined crashed the whole TUI after answering).
+    const t = await mount()
+    await until(t, () => t.frame().includes("Ready"))
+    act(() => t.gw.push({
+      type: "clarify.request",
+      payload: { request_id: "q-batch", questions: [{ qid: "q0", question: "batch q?" }] },
+    }))
+    await t.settle()
+    // No top-level question → free-text mode (choices empty).
+    expect(t.frame()).toContain("Enter send · Esc cancel")
+
+    await act(async () => { await t.keys.pressEnter() })
+    await t.settle()
+    expect(t.gw.last("clarify.respond")?.params.answer).toBe("")
+    expect(t.gw.last("clarify.respond")?.params.question_id).toBe("q0")
+    // Rendering the answered Outcome must not throw (frame still renders).
+    expect(t.frame()).toContain("Ready")
+    t.destroy()
+  })
+
+
+  test("clarify: batch payload with choices selects the first item and renders outcome", async () => {
+    // Batch with a choices-bearing first question normalizes to a single
+    // select card; picking a value flows through Outcome without crashing.
+    const t = await mount()
+    await until(t, () => t.frame().includes("Ready"))
+    act(() => t.gw.push({
+      type: "clarify.request",
+      payload: { request_id: "q-batch-choice", questions: [{ qid: "q0", question: "pick?", choices: ["yes", "no"] }] },
+    }))
+    await t.settle()
+    expect(t.frame()).toContain("pick?")
+
+    // sel defaults to 0 → Enter picks the first item.
+    act(() => t.keys.pressEnter())
+    await t.settle()
+    expect(t.gw.last("clarify.respond")?.params.answer).toBe("yes")
+    expect(t.gw.last("clarify.respond")?.params.question_id).toBe("q0")
+    // Outcome row renders (question as head + answer as body), no crash.
+    await until(t, () => t.frame().includes("✓") && t.frame().includes("yes"))
+    t.destroy()
+  })
+
+  test("clarify: multi-question batch walks through each question and completes", async () => {
+    // Durable protocol contract: each question locks by its own question_id;
+    // the backend's `remaining` advances the form until empty, then the turn
+    // continues. Regression: frontend used to render only the first question,
+    // leaving later qids unlocked and timing the batch out.
+    let locked: string[] = []
+    const gw = new MockGateway({
+      "clarify.respond": p => {
+        const qid = p.question_id as string
+        if (!qid) return { accepted: true }             // cancel-all
+        locked = [...new Set([...locked, qid])]
+        const remaining = ["q0", "q1"].filter(q => !locked.includes(q))
+        return { status: "ok", remaining }
+      },
+    })
+    const t = await mount({ gw })
+    await until(t, () => t.frame().includes("Ready"))
+    act(() => gw.push({
+      type: "clarify.request",
+      payload: { request_id: "q-multi", questions: [
+        { qid: "q0", question: "first?", choices: ["a", "b"] },
+        { qid: "q1", question: "second?", choices: ["x", "y"] },
+      ] },
+    }))
+    await t.settle()
+    // First question shown with progress indicator.
+    expect(t.frame()).toContain("ask 1/2")
+    expect(t.frame()).toContain("first?")
+
+    // Answer q0 → backend reports remaining [q1] → advance to q1.
+    act(() => t.keys.pressEnter())
+    await t.settle()
+    expect(t.gw.last("clarify.respond")?.params.question_id).toBe("q0")
+    await until(t, () => t.frame().includes("ask 2/2") && t.frame().includes("second?"))
+
+    // Answer q1 → remaining empty → batch completes, no crash.
+    act(() => t.keys.pressEnter())
+    await t.settle()
+    expect(t.gw.last("clarify.respond")?.params.question_id).toBe("q1")
+    const calls = gw.calls.filter(c => c.method === "clarify.respond")
+    expect(calls).toHaveLength(2)
+    expect(t.frame()).toContain("Ready")
+    t.destroy()
+  })
 
   test("sudo: escape cancels with empty password", async () => {
     const t = await mount()
