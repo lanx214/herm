@@ -52,7 +52,12 @@ export type GatewayEvent = ({
   | { type: "tool.progress"; payload: { name?: string; preview?: string } }
   | { type: "tool.generating"; payload: { name?: string } }
   | { type: "tool.complete"; payload: { tool_id: string; name?: string; summary?: string; error?: string; inline_diff?: string; duration_s?: number; result_text?: string; todos?: unknown[]; result?: unknown } }
-  | { type: "clarify.request"; payload: { request_id: string; question: string; choices: string[] | null } }
+  | {
+      type: "clarify.request"
+      payload:
+        | { request_id: string; question: string; choices: string[] | null }
+        | { request_id: string; questions: { qid: string; question: string; choices?: string[] | null; multi_select?: boolean }[] }
+    }
   | { type: "approval.request"; payload: { command: string; description: string; pattern_keys?: string[] } }
   | { type: "sudo.request"; payload: { request_id: string } }
   | { type: "secret.request"; payload: { request_id: string; prompt: string; env_var: string; metadata?: unknown } }

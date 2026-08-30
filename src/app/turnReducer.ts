@@ -425,7 +425,7 @@ function updatePrompt(messages: Message[], id: string, fn: (p: PromptPart) => Pr
 }
 
 function promptQuestion(req: PromptReq): string | undefined {
-  if (req.variant === "clarify") return req.question
+  if (req.variant === "clarify") return "questions" in req ? req.questions[0]?.question : req.question
   if (req.variant === "approval") return req.description || "Shell command"
   if (req.variant === "sudo") return "Sudo required"
   if (req.variant === "secret") return req.env_var ? `Secret: ${req.env_var}` : "Secret required"

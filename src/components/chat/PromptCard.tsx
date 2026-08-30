@@ -23,7 +23,7 @@ import { mkApproval, remember } from "../../context/approval-memory"
 import { categorize, suggest } from "../../context/approval-categories"
 import type { ApprovalCategory, Verdict } from "../../context/approval-categories"
 import { MaskInput } from "../../ui/mask-input"
-import type { PromptPart, PromptReq, Part } from "../../types/message"
+import type { PromptPart, PromptReq, Part, ClarifyReq, ClarifyBatchReq } from "../../types/message"
 
 export type PromptCardHandle = {
   /** Offer a key to the pending card. Returns true if consumed. */
@@ -261,47 +261,94 @@ const Approval = forwardRef<PromptCardHandle, {
   )
 })
 
+type ClarifyAnswerable = Extract<PromptReq, { variant: "clarify" }>
+type ClarifyQ = { qid: string; question: string; choices: string[] }
+
+function clarifyQuestions(req: ClarifyAnswerable): ClarifyQ[] {
+  if ("questions" in req && req.questions.length)
+    return req.questions.map(q => ({
+      qid: q.qid, question: q.question, choices: q.choices ?? [],
+    }))
+  // Legacy single-question shape: one-entry batch with qid "q0".
+  return [{ qid: "q0", question: "question" in req ? req.question : "(ask)", choices: "choices" in req ? (req.choices ?? []) : [] }]
+}
+
 const Clarify = forwardRef<PromptCardHandle, {
-  req: Extract<PromptReq, { variant: "clarify" }>
+  req: ClarifyAnswerable
   onAnswer: Answer
 }>((p, ref) => {
   const theme = useTheme().theme
   const gw = useGateway()
-  const choices = p.req.choices ?? []
+  const qs = clarifyQuestions(p.req)
+  const [qi, setQi] = useState(0)                  // active question index
+  const [done, setDone] = useState(false)          // all answered
+  const cur = qs[Math.min(qi, qs.length - 1)]
+  const choices = cur.choices
   const [sel, setSel] = useState(0)
   const [typing, setTyping] = useState(choices.length === 0)
   const [custom, setCustom] = useState("")
   const [err, setErr] = useState("")
-  const done = useRef(false)
+  const sent = useRef(false)
+
+  const finish = (label: string, ok: boolean) => {
+    if (sent.current) return
+    sent.current = true
+    setDone(true)
+    p.onAnswer(label, ok)
+  }
+
+  const cancelAll = () => {
+    if (sent.current) return
+    sent.current = true
+    setDone(true)
+    setErr("")
+    // Cancel-all: respond with no question_id → backend treats as plain cancel.
+    void gw.request("clarify.respond", { request_id: p.req.request_id, answer: "" })
+      .then(() => p.onAnswer("(cancelled)", false))
+      .catch((e: Error) => { setErr(e.message) })
+  }
 
   const send = (answer: string) => {
-    if (done.current) return
-    done.current = true
+    if (sent.current) return
     setErr("")
-    void gw.request("clarify.respond", {
-      request_id: p.req.request_id, answer,
-    }).then(() => p.onAnswer(answer || "(cancelled)", answer !== ""))
-      .catch((e: Error) => {
-        done.current = false
-        setErr(e.message)
-      })
+    // Lock this question's answer by its qid. Backend returns `remaining`;
+    // when it's empty every question is answered and the turn continues.
+    void gw.request<{ remaining?: string[] }>("clarify.respond", {
+      request_id: p.req.request_id, answer, question_id: cur.qid,
+    }).then(r => {
+      const left = (r?.remaining ?? []).length
+      if (left === 0) { finish(answer || "(cancelled)", answer !== ""); return }
+      // Move to the next unanswered question.
+      const rem = r?.remaining ?? []
+      const nxt = qs.findIndex(q => rem.includes(q.qid) && q.qid !== cur.qid)
+      const ni = nxt >= 0 ? nxt : Math.min(qi + 1, qs.length - 1)
+      setQi(ni)
+      setSel(0)
+      setCustom("")
+      setTyping(qs[ni].choices.length === 0)
+    }).catch((e: Error) => {
+      sent.current = false
+      setErr(e.message)
+    })
   }
 
   useImperativeHandle(ref, () => ({
-    // Freeform mode owns a focused <input>; list mode doesn't.
+    // Only the freeform input owns an <input>; list rows don't.
     masked: typing,
     feed: (key) => {
       if (typing) {
-        // <input> handles text; we only intercept cancel-back.
         if (key.name === "escape") {
           if (choices.length) { setTyping(false); return true }
-          send(""); return true
+          cancelAll(); return true
         }
         return false
       }
-      if (key.name === "escape") { send(""); return true }
+      if (key.name === "escape") { cancelAll(); return true }
       if (key.name === "up")   { setSel(s => Math.max(0, s - 1)); return true }
       if (key.name === "down") { setSel(s => Math.min(choices.length, s + 1)); return true }
+      if (key.name === "tab" && qs.length > 1) {
+        const ni = (qi + 1) % qs.length; setQi(ni); setSel(0); setCustom(""); setTyping(qs[ni].choices.length === 0); return true
+      }
       if (key.name === "return") {
         if (sel === choices.length) { setTyping(true); return true }
         const c = choices[sel]
@@ -312,13 +359,16 @@ const Clarify = forwardRef<PromptCardHandle, {
       if (n !== null && n >= 1 && n <= choices.length) { send(choices[n - 1]); return true }
       return false
     },
-  }), [typing, sel, choices])
+  }), [typing, sel, qi, choices, qs])
+
+  const progress = qs.length > 1
+    ? ` ${qi + 1}/${qs.length}` : ""
 
   const head = (
     <box minHeight={1}>
       <text wrapMode="word">
-        <span fg={theme.accent}><strong>ask </strong></span>
-        <span fg={theme.text}><strong>{p.req.question}</strong></span>
+        <span fg={theme.accent}><strong>ask{progress} </strong></span>
+        <span fg={theme.text}><strong>{cur.question}</strong></span>
       </text>
     </box>
   )
@@ -331,7 +381,7 @@ const Clarify = forwardRef<PromptCardHandle, {
         {typing ? (
           <>
             <box flexDirection="row" height={1}>
-              <text fg={theme.textMuted}>{"> "}</text>
+              <text fg={theme.textMuted}>{"🡒 "}</text>
               <input
                 value={custom} onInput={setCustom}
                 onSubmit={() => send(custom)}
@@ -354,7 +404,9 @@ const Clarify = forwardRef<PromptCardHandle, {
               </box>
             ))}
             <box height={1} />
-            <text fg={theme.textMuted}>↑/↓ · Enter · 1-{choices.length} · Esc cancel</text>
+            <text fg={theme.textMuted}>
+              ↑/↓ · Enter · 1-{choices.length} · {qs.length > 1 ? "Tab next · " : ""}Esc cancel
+            </text>
           </>
         )}
         {err ? <text fg={theme.error}>{err}</text> : null}
@@ -412,14 +464,15 @@ function same(a: string | undefined, b: string): boolean {
   return Boolean(a && b && b.toLowerCase().includes(a.toLowerCase()))
 }
 
-function cap(s: string, n = 160): string {
+function cap(s: string | undefined, n = 160): string {
+  if (!s) return ""
   return s.length <= n ? s : s.slice(0, n - 1) + "…"
 }
 
 function question(part: PromptPart): string {
   const a = part.answered?.question
   if (a) return a
-  if (part.req.variant === "clarify") return part.req.question
+  if (part.req.variant === "clarify") return "questions" in part.req ? part.req.questions[0]?.question ?? "" : part.req.question ?? ""
   if (part.req.variant === "approval") return mkApproval(part.req).question
   if (part.req.variant === "sudo") return "Sudo required"
   if (part.req.variant === "secret") return part.req.env_var ? `Secret: ${part.req.env_var}` : "Secret required"
